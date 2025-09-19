@@ -180,11 +180,28 @@ impl CardStatus {
     }
 }
 
+#[derive(Default, Debug)]
+pub enum SendAction {
+    #[default]
+    None,
+    FTLWrite{sector_index: u64, sector_count: u64},
+}
+
+#[derive(Default, Debug)]
+pub enum RecvAction {
+    #[default]
+    None,
+    FTLRead{sector_index: u64, sector_count: u64},
+    SDHCPowerProfileRead,
+}
+
 #[derive(Default)]
 pub struct SD {
     card_status: CardStatus,
     rca: u16,
     image_file: Option<fs::File>,
+    send_action: SendAction,
+    recv_action: RecvAction,
 }
 
 impl SD {
@@ -206,12 +223,8 @@ impl SD {
         self.image_file = None;
     }
 
-    pub fn process_cmd(
-        &mut self,
-        cmd: u8,
-        arg: u32,
-        data: Option<&mut [u8]>,
-    ) -> Response {
+    /// Make a request on the CMD channel.
+    pub fn make_request(&mut self, cmd: u8, arg: u32) -> Response {
         if self.card_status.get_app_command() == 1 {
             // ACMD
             // TODO
@@ -247,15 +260,9 @@ impl SD {
             }
             6 => {
                 if self.card_status.get_current_state() == CurrentState::Transfer {
-                    match data {
-                        Some(buf) => {
-                            let status = self.card_status.after_read();
-                            // TODO
-                            buf[..64].clone_from_slice(&[0; 64]);
-                            Response::R1(ResponseType1 { cmd, status, busy: false })
-                        }
-                        None => { self.term_illegal() }
-                    }
+                    self.recv_action = RecvAction::SDHCPowerProfileRead;
+                    self.card_status.set_current_state(CurrentState::SendingData);
+                    Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
                 } else {
                     self.term_illegal()
                 }
@@ -270,6 +277,16 @@ impl SD {
                 self.term_illegal()
             }
         }
+    }
+
+    /// Send data to the emulated SD card through the DAT channel.
+    pub fn send_data(&mut self, data: &[u8]) {
+
+    }
+
+    /// Receive data from the emulated SD card through the DAT channel.
+    pub fn recv_data(&mut self, data: &mut [u8]) {
+
     }
 
     /// Set the `ILLEGAL_COMMAND` status bit and respond with a no response.

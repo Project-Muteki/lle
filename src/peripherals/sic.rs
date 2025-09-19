@@ -1,9 +1,8 @@
 use bit_field::{B1, B2, B4, B6, B8, bitfield};
 use log::warn;
 
-use crate::device::UnicornContext;
-use crate::extdev;
-use crate::extdev::sd::{Response, SD};
+use crate::device::{Device, UnicornContext};
+use crate::extdev::sd::Response;
 use crate::peripherals::common::{log_unsupported_read, log_unsupported_write};
 
 pub const NAME: &str = "SIC";
@@ -22,7 +21,7 @@ const REG_DMACCSR: u64 = BASE + 0x400;
 const REG_DMACSAR: u64 = BASE + 0x408;
 const REG_DMACBCR: u64 = BASE + 0x40c;
 const REG_DMACIER: u64 = BASE + 0x410;
-const REG_DMACISR: u64 = BASE + 0x410;
+const REG_DMACISR: u64 = BASE + 0x414;
 
 const REG_FMICR: u64 = BASE_FMI;
 const REG_FMIIER: u64 = BASE_FMI + 0x004;
@@ -46,7 +45,6 @@ pub struct SICConfig {
     sd_control: SDCR,
     sd_response: (u32, u32),
     fifo: [u8; 0x400],
-    dma_large_buf: [u8; 0x200 * 255]
 }
 
 impl Default for SICConfig {
@@ -57,7 +55,6 @@ impl Default for SICConfig {
             sd_control: Default::default(),
             sd_response: Default::default(),
             fifo: [0u8; 1024],
-            dma_large_buf: [0u8; 0x200 * 255],
         }
     }
 }
@@ -83,19 +80,10 @@ struct SDCR {
     clk_keep1: B1,
 }
 
-impl SDCR {
-    #[inline]
-    fn end_transaction(&mut self) {
-        self.set_di_en(0);
-        self.set_do_en(0);
-        self.set_co_en(0);
-    }
-}
-
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if addr >= REG_FB_0 && addr < REG_FB_0_END {
         // TODO
-        let fifo = &uc.get_data().peripheral.sic.fifo;
+        let fifo = &uc.get_data().sic.fifo;
         let fifo_addr: usize = (((addr - REG_FB_0) & 0x3ff) as u16).into();
         return match size {
             1 => fifo[fifo_addr].into(),
@@ -126,7 +114,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         log_unsupported_read(NAME, addr, size);
         return 0;
     }
-    let sic = &uc.get_data().peripheral.sic;
+    let sic = &uc.get_data().sic;
     match addr {
         REG_DMACSAR => {
             match sic.dma_dest_addr {
@@ -147,7 +135,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 
     if addr >= REG_FB_0 && addr < REG_FB_0_END {
         // TODO
-        let fifo = &mut data.peripheral.sic.fifo;
+        let fifo = &mut data.sic.fifo;
         let fifo_addr: usize = (((addr - REG_FB_0) & 0x3ff) as u16).into();
         match size {
             1 => fifo[fifo_addr] = value as u8,
@@ -176,68 +164,81 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         log_unsupported_write(NAME, addr, size, value);
         return;
     }
-    let sic = &mut data.peripheral.sic;
+    let sic = &mut data.sic;
     match addr {
         REG_SDARG => sic.sd_arg = value as u32,
         REG_SDCR => {
             let sd_control = &mut sic.sd_control;
             sd_control.set(0, 32, value);
-            // Submit command
-            if sd_control.get_co_en() == 1 {
-                let sd_port = sd_control.get_sdport();
-                let sd_driver = match sd_port {
-                    0 => Some(&mut data.internal_sd),
-                    2 => Some(&mut data.external_sd),
-                    _ => None,
-                };
-                match sd_driver {
-                    Some(sd_instance) => {
-                        let fifo = &mut sic.fifo;
-                        let data = if sd_control.get_do_en() == 1 || sd_control.get_di_en() == 1 {
-                            Some(&mut fifo[..])
-                        } else {
-                            None
-                        };
-                        let response = sd_instance.process_cmd(sd_control.get_cmd_code(), sic.sd_arg, data);
-                        match response {
-                            Response::R1(body) => {
-                                sic.sd_response = body.into();
-                                sd_control.set_ri_en(0);
-                                sd_control.end_transaction();
-                            }
-                            Response::R2(body) => {
-                                fifo[..16].clone_from_slice(&body.cid_csd);
-                                sd_control.set_r2_en(0);
-                                sd_control.end_transaction();
-                            }
-                            Response::R3(body) => {
-                                sic.sd_response = body.into();
-                                sd_control.set_ri_en(0);
-                                sd_control.end_transaction();
-                            }
-                            Response::R6(body) => {
-                                sic.sd_response = body.into();
-                                sd_control.set_ri_en(0);
-                                sd_control.end_transaction();
-                            }
-                            Response::R7(body) => {
-                                sic.sd_response = body.into();
-                                sd_control.set_ri_en(0);
-                                sd_control.end_transaction();
-                            }
-                            Response::RNone => {}
-                        }
-                    }
-                    None => {
-                        warn!("{NAME}: Cannot send command through unmapped SD port {sd_port}");
-                    }
-                }
-            }
-            match sic.dma_dest_addr {
-                Some(addr) => { uc.mem_write(addr, &[0; 64]); },
-                None => {},
-            }
         }
         _ => log_unsupported_write(NAME, addr, size, value),
+    }
+}
+
+pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
+    // Do not tick if clock is disabled
+    if uc.get_data().clk.ahbclk.get_sic() == 0 {
+        return;
+    }
+
+    let sd_control = &uc.get_data().sic.sd_control;
+    let command_enable = sd_control.get_co_en() == 1;
+    let sd_port = sd_control.get_sdport();
+    let has_data_in = sd_control.get_di_en() == 1;
+    let has_data_out = sd_control.get_do_en() == 1;
+
+    let cmd = sd_control.get_cmd_code();
+    let arg = uc.get_data().sic.sd_arg;
+
+    if command_enable {
+        let sd_device_op = match sd_port {
+            0 => Some(&mut device.internal_sd),
+            2 => Some(&mut device.external_sd),
+            _ => None
+        };
+        match sd_device_op {
+            Some(sd_device) => {
+                let sic_mut = &mut uc.get_data_mut().sic;
+                match sd_device.make_request(cmd, arg) {
+                    Response::R1(response_type1) => {
+                        sic_mut.sd_response = response_type1.into();
+                        sic_mut.sd_control.set_ri_en(0);
+                        sic_mut.sd_control.set_co_en(0);
+                    },
+                    Response::R2(response_type2) => {
+                        sic_mut.fifo[..response_type2.cid_csd.len()].copy_from_slice(&response_type2.cid_csd);
+                        sic_mut.sd_control.set_r2_en(0);
+                        sic_mut.sd_control.set_co_en(0);
+                    },
+                    Response::R3(response_type3) => {
+                        sic_mut.sd_response = response_type3.into();
+                        sic_mut.sd_control.set_ri_en(0);
+                        sic_mut.sd_control.set_co_en(0);
+                    },
+                    Response::R6(response_type6) => {
+                        sic_mut.sd_response = response_type6.into();
+                        sic_mut.sd_control.set_ri_en(0);
+                        sic_mut.sd_control.set_co_en(0);
+                    },
+                    Response::R7(response_type7) => {
+                        sic_mut.sd_response = response_type7.into();
+                        sic_mut.sd_control.set_ri_en(0);
+                        sic_mut.sd_control.set_co_en(0);
+                    },
+                    Response::RNone => {},
+                }
+            }
+            None => {
+                warn!("{NAME}: Cannot send command through unmapped SD port {sd_port}");
+            }
+        }
+    }
+
+    if has_data_in {
+        todo!();
+    }
+
+    if has_data_out {
+        todo!();
     }
 }

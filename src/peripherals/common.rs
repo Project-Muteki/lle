@@ -16,7 +16,7 @@ pub fn log_unsupported_write(context: &str, addr: u64, size: usize, value: u64) 
 
 #[inline]
 pub fn mmio_get_store_only(uc: &mut UnicornContext, addr: u64) -> u64 {
-    match uc.get_data().peripheral.store_only.get(&addr) {
+    match uc.get_data().store_only.get(&addr) {
         None => 0u64,
         Some(&v) => v,
     }
@@ -24,5 +24,5 @@ pub fn mmio_get_store_only(uc: &mut UnicornContext, addr: u64) -> u64 {
 
 #[inline]
 pub fn mmio_set_store_only(uc: &mut UnicornContext, addr: u64, value: u64) {
-    uc.get_data_mut().peripheral.store_only.insert(addr, value);
+    uc.get_data_mut().store_only.insert(addr, value);
 }

@@ -104,8 +104,8 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         REG_CHIPCFG => { 0x00008020 }
         // Self-test should always return OK and not running.
         REG_SDRBIST | REG_CRBIST => { 0x00000000 }
-        REG_AHBCLK => { uc.get_data().peripheral.clk.ahbclk.get(0, 32) }
-        REG_APBCLK => { uc.get_data().peripheral.clk.apbclk.get(0, 32) }
+        REG_AHBCLK => { uc.get_data().clk.ahbclk.get(0, 32) }
+        REG_APBCLK => { uc.get_data().clk.apbclk.get(0, 32) }
         REG_GPAFUN | REG_GPBFUN | REG_GPCFUN | REG_GPDFUN | REG_GPEFUN => {
             mmio_get_store_only(uc, addr)
         }

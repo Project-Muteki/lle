@@ -15,13 +15,16 @@ use unicorn_engine::Arch;
 use unicorn_engine::Mode;
 use unicorn_engine::uc_error;
 
+use clap::Parser;
+use env_logger;
+
 use device::Device;
 use peripherals::{sic, sys};
 
+use crate::device::PeripheralState;
 use crate::device::UnicornContext;
 
-use env_logger;
-
+// TODO: Move this out of main
 #[derive(Debug)]
 pub enum RuntimeError {
     IOError(io::Error),
@@ -41,6 +44,21 @@ impl From<uc_error> for RuntimeError {
     fn from(value: uc_error) -> Self {
         Self::UnicornError(value)
     }
+}
+
+/// Nuvoton device emulator.
+/// 
+/// Emulates Nuvoton N329x-based devices made by Inventec Besta.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Embedded SD card image.
+    #[arg(long)]
+    esd: String,
+
+    /// External SD card image.
+    #[arg(long, required = false)]
+    xsd: Option<String>,
 }
 
 fn read_le_u32(input: &[u8]) -> Result<u32, RuntimeError> {
@@ -68,8 +86,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     let mut code = vec![0u8; load_size];
     sd_image.read_exact(&mut code)?;
     uc.mem_write(load_addr.into(), &code)?;
+    uc.set_pc(load_addr.into())?;
 
-    let config_clk = &mut uc.get_data_mut().peripheral.clk;
+    let config_clk = &mut uc.get_data_mut().clk;
     config_clk.ahbclk.set_cpu(1);
     config_clk.ahbclk.set_sram(1);
 
@@ -80,7 +99,7 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 /// 
 /// This does not populate registers, nor boots from the SD card. These are handled in run_bootrom().
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
-    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, Device::default())?;
+    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, PeripheralState::default())?;
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
 
     // MMIO registers
@@ -98,6 +117,20 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
 
 fn main() {
     env_logger::init();
+    let args = Args::parse();
+
     let mut emulator = emu_init().unwrap();
+    let mut device = Box::new(Device::default());
     let uc = &mut emulator;
+
+    let mut esd_img = File::open(args.esd).unwrap();
+    run_bootrom(uc, &mut esd_img).unwrap();
+
+    // TODO move this out of main
+    let pc = uc.pc_read().unwrap();
+
+    loop {
+        uc.emu_start(pc, 0xffffffffffffffff, 0, 0).unwrap();
+        sic::tick(uc, device.as_mut());
+    }
 }

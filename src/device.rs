@@ -13,9 +13,14 @@ pub struct PeripheralState {
 
 #[derive(Default)]
 pub struct Device {
-    pub peripheral: PeripheralState,
     pub internal_sd: SD,
     pub external_sd: SD,
 }
 
-pub type UnicornContext<'a> = Unicorn<'a, Device>;
+pub type UnicornContext<'a> = Unicorn<'a, PeripheralState>;
+
+impl Device {
+    pub fn device_tick(&mut self, uc: &mut UnicornContext) {
+        
+    }
+}

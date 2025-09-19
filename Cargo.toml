@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bit_field = { path = "./bit_field" }
+clap = { version = "4.5.47", features = ["derive"] }
 env_logger = "0.11.8"
 log = "0.4.28"
 unicorn-engine = { version = "2.1.3", default-features = false, features = ["arch_aarch64", "arch_arm"] }
