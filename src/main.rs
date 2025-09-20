@@ -1,5 +1,11 @@
+/// MMIO peripheral emulation routines.
 mod peripherals;
+/// External device emulation routines.
+///
+/// Normally this should not have direct access to the emulator states, and one should only exchange data between
+/// the emulator context and routines defined under here.
 mod extdev;
+/// Device emulation context.
 mod device;
 
 use std::fs::File;
@@ -8,6 +14,7 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 
+use log::info;
 use unicorn_engine::ArmCpuModel;
 use unicorn_engine::Permission;
 use unicorn_engine::Unicorn;
@@ -21,7 +28,7 @@ use env_logger;
 use device::Device;
 use peripherals::{sic, sys};
 
-use crate::device::PeripheralState;
+use crate::device::MMIOState;
 use crate::device::UnicornContext;
 
 // TODO: Move this out of main
@@ -50,7 +57,7 @@ impl From<uc_error> for RuntimeError {
 /// 
 /// Emulates Nuvoton N329x-based devices made by Inventec Besta.
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about)]
 struct Args {
     /// Embedded SD card image.
     #[arg(long)]
@@ -61,6 +68,7 @@ struct Args {
     xsd: Option<String>,
 }
 
+#[inline]
 fn read_le_u32(input: &[u8]) -> Result<u32, RuntimeError> {
     let conv = input.try_into().map_err(|_| RuntimeError::LoaderParserFailed)?;
     Ok(u32::from_le_bytes(conv))
@@ -82,6 +90,7 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 
     let load_addr = read_le_u32(&nvt_sd_boot_header[4..8])?;
     let load_size: usize = usize::try_from(read_le_u32(&nvt_sd_boot_header[8..12])?).map_err(|_| RuntimeError::LoaderParserFailed)?;
+    info!("bootrom_hle: Loading 0x{load_size:x} bytes of code at 0x{load_addr:08x}...");
 
     let mut code = vec![0u8; load_size];
     sd_image.read_exact(&mut code)?;
@@ -92,6 +101,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     config_clk.ahbclk.set_cpu(1);
     config_clk.ahbclk.set_sram(1);
 
+    // TODO: Set other initial states
+
+    info!("bootrom_hle: BootROM stage done.");
     Ok(())
 }
 
@@ -99,8 +111,11 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 /// 
 /// This does not populate registers, nor boots from the SD card. These are handled in run_bootrom().
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
-    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, PeripheralState::default())?;
+    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, MMIOState::default())?;
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
+
+    // Stop condition hook
+    uc.add_code_hook(0, 0xffffffff, device::check_stop_condition)?;
 
     // MMIO registers
     uc.mmio_map(sys::BASE, sys::SIZE, Some(sys::read), Some(sys::write))?;
@@ -123,14 +138,15 @@ fn main() {
     let mut device = Box::new(Device::default());
     let uc = &mut emulator;
 
-    let mut esd_img = File::open(args.esd).unwrap();
+    let mut esd_img = File::open(&args.esd).unwrap();
     run_bootrom(uc, &mut esd_img).unwrap();
+    device.internal_sd.mount(&args.esd).unwrap();
 
     // TODO move this out of main
-    let pc = uc.pc_read().unwrap();
-
     loop {
+        let pc = uc.pc_read().unwrap();
+        // TODO: Use code hook to control peripheral ticks.
         uc.emu_start(pc, 0xffffffffffffffff, 0, 0).unwrap();
-        sic::tick(uc, device.as_mut());
+        device.tick(uc);
     }
 }

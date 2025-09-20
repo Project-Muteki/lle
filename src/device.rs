@@ -2,25 +2,41 @@ use std::collections::HashMap;
 
 use unicorn_engine::Unicorn;
 
-use crate::{extdev::sd::SD, peripherals::{sic::SICConfig, sys::ClockConfig}};
+use crate::{extdev::sd::SD, peripherals::{sic, sys}};
 
 #[derive(Default)]
-pub struct PeripheralState {
+pub struct MMIOState {
     pub store_only: HashMap<u64, u64>,
-    pub clk: ClockConfig,
-    pub sic: SICConfig,
+    pub clk: sys::ClockConfig,
+    pub sic: sic::SICConfig,
 }
 
+/// Peripheral device emulation context.
+///
+/// Contains the states required to emulate devices, and actual device logic (excluding MMIO, which is considered part
+/// of the emulator state).
 #[derive(Default)]
 pub struct Device {
     pub internal_sd: SD,
     pub external_sd: SD,
 }
 
-pub type UnicornContext<'a> = Unicorn<'a, PeripheralState>;
+pub type UnicornContext<'a> = Unicorn<'a, MMIOState>;
+
+pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
+    let data = uc.get_data_mut();
+    data.clk.ticks += 1;
+    // TODO emulate actual clock behavior
+    if data.clk.ticks % 4 == 0 {
+        uc.emu_stop().unwrap();
+    }
+}
 
 impl Device {
-    pub fn device_tick(&mut self, uc: &mut UnicornContext) {
-        
+    /// Process MMIO register updates and device state changes.
+    ///
+    /// This will modify both the device states and the emulator states associated with it.
+    pub fn tick(&mut self, uc: &mut UnicornContext) {
+        sic::tick(uc, self);
     }
 }

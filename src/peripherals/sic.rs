@@ -11,17 +11,17 @@ pub const NAME_FMI: &str = "FMI";
 pub const BASE: u64 = 0xB1006000;
 pub const SIZE: usize = 0x1000;
 
-pub const BASE_DMAC: u64 = BASE;
-pub const BASE_FMI: u64 = BASE + 0x800;
+pub const BASE_DMAC: u64 = 0x0;
+pub const BASE_FMI: u64 = 0x800;
 
-const REG_FB_0: u64 = BASE;
-const REG_FB_0_END: u64 = BASE + 0x400;
+const REG_FB_0: u64 = 0x0;
+const REG_FB_0_END: u64 = 0x400;
 
-const REG_DMACCSR: u64 = BASE + 0x400;
-const REG_DMACSAR: u64 = BASE + 0x408;
-const REG_DMACBCR: u64 = BASE + 0x40c;
-const REG_DMACIER: u64 = BASE + 0x410;
-const REG_DMACISR: u64 = BASE + 0x414;
+const REG_DMACCSR: u64 = 0x400;
+const REG_DMACSAR: u64 = 0x408;
+const REG_DMACBCR: u64 = 0x40c;
+const REG_DMACIER: u64 = 0x410;
+const REG_DMACISR: u64 = 0x414;
 
 const REG_FMICR: u64 = BASE_FMI;
 const REG_FMIIER: u64 = BASE_FMI + 0x004;
@@ -92,17 +92,14 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                     warn!("{NAME_DMAC}: Unaligned read16 at address {addr}.");
                     return 0;
                 }
-                (fifo[fifo_addr] | fifo[fifo_addr + 1] << 8).into()
+                u16::from_le_bytes(<[u8; 2]>::try_from(&fifo[fifo_addr..fifo_addr+2]).unwrap()).into()
             }
             4 => {
                 if addr & 3 != 0 {
                     warn!("{NAME_DMAC}: Unaligned read32 at address {addr}.");
                     return 0;
                 }
-                (fifo[fifo_addr] |
-                    (fifo[fifo_addr + 1] << 8) |
-                    (fifo[fifo_addr + 2] << 16) |
-                    (fifo[fifo_addr + 3] << 24)).into()
+                u32::from_le_bytes(<[u8; 4]>::try_from(&fifo[fifo_addr..fifo_addr+4]).unwrap()).into()
             }
             _ => {
                 log_unsupported_read(NAME, addr, size);

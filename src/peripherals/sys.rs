@@ -7,17 +7,17 @@ pub const NAME: &str = "SYS";
 pub const BASE: u64 = 0xB0000000;
 pub const SIZE: usize = 0x1000;
 
-const REG_CHIPID: u64 = BASE;
-const REG_CHIPCFG: u64 = BASE + 0x4;
-const REG_SDRBIST: u64 = BASE + 0x24;
-const REG_CRBIST: u64 = BASE + 0x28;
-const REG_GPAFUN: u64 = BASE + 0x80;
-const REG_GPBFUN: u64 = BASE + 0x84;
-const REG_GPCFUN: u64 = BASE + 0x88;
-const REG_GPDFUN: u64 = BASE + 0x8c;
-const REG_GPEFUN: u64 = BASE + 0x90;
+const REG_CHIPID: u64 = 0x0;
+const REG_CHIPCFG: u64 = 0x4;
+const REG_SDRBIST: u64 = 0x24;
+const REG_CRBIST: u64 = 0x28;
+const REG_GPAFUN: u64 = 0x80;
+const REG_GPBFUN: u64 = 0x84;
+const REG_GPCFUN: u64 = 0x88;
+const REG_GPDFUN: u64 = 0x8c;
+const REG_GPEFUN: u64 = 0x90;
 
-const CLK_BASE: u64 = BASE + 0x200;
+const CLK_BASE: u64 = 0x200;
 const REG_PWRCON: u64 = CLK_BASE;
 const REG_AHBCLK: u64 = CLK_BASE + 0x4;
 const REG_APBCLK: u64 = CLK_BASE + 0x8;
@@ -89,6 +89,7 @@ pub struct APBCLKRegister {
 
 #[derive(Default)]
 pub struct ClockConfig {
+    pub ticks: u32,
     pub ahbclk: AHBCLKRegister,
     pub apbclk: APBCLKRegister,
 }
