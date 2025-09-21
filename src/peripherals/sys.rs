@@ -1,4 +1,5 @@
 use bit_field::{B1, B5, B6, B8, bitfield};
+use log::info;
 
 use crate::device::UnicornContext;
 use crate::peripherals::common::{log_unsupported_read, log_unsupported_write, mmio_get_store_only, mmio_set_store_only};
@@ -89,7 +90,7 @@ pub struct APBCLKRegister {
 
 #[derive(Default)]
 pub struct ClockConfig {
-    pub ticks: u32,
+    pub ticks: u64,
     pub ahbclk: AHBCLKRegister,
     pub apbclk: APBCLKRegister,
 }
@@ -118,6 +119,36 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 }
 
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
-    log_unsupported_write(NAME, addr, size, value);
-    mmio_set_store_only(uc, addr, value);
+    if size != 4 {
+        log_unsupported_write(NAME, addr, size, value);
+    }
+
+    match addr {
+        REG_AHBCLK => { uc.get_data_mut().clk.ahbclk.set(0, 32, value) }
+        REG_APBCLK => { uc.get_data_mut().clk.apbclk.set(0, 32, value) }
+        REG_GPAFUN => {
+            info!("{NAME}: GPIOA config 0x{value:08x}");
+            mmio_set_store_only(uc, addr, value);
+        }
+        REG_GPBFUN => {
+            info!("{NAME}: GPIOB config 0x{value:08x}");
+            mmio_set_store_only(uc, addr, value);
+        }
+        REG_GPCFUN => {
+            info!("{NAME}: GPIOC config 0x{value:08x}");
+            mmio_set_store_only(uc, addr, value);
+        }
+        REG_GPDFUN => {
+            info!("{NAME}: GPIOD config 0x{value:08x}");
+            mmio_set_store_only(uc, addr, value);
+        }
+        REG_GPEFUN => {
+            info!("{NAME}: GPIOE config 0x{value:08x}");
+            mmio_set_store_only(uc, addr, value);
+        }
+        _ => {
+            log_unsupported_write(NAME, addr, size, value);
+            mmio_set_store_only(uc, addr, value);
+        }
+    }
 }

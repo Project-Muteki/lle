@@ -26,7 +26,7 @@ use clap::Parser;
 use env_logger;
 
 use device::Device;
-use peripherals::{sic, sys};
+use peripherals::{sic, sys, gpio};
 
 use crate::device::MMIOState;
 use crate::device::UnicornContext;
@@ -120,6 +120,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     // MMIO registers
     uc.mmio_map(sys::BASE, sys::SIZE, Some(sys::read), Some(sys::write))?;
     uc.mmio_map(sic::BASE, sic::SIZE, Some(sic::read), Some(sic::write))?;
+    uc.mmio_map(gpio::BASE, gpio::SIZE, Some(gpio::read), Some(gpio::write))?;
 
     // Memory
     // SDRAM (32MiB)
