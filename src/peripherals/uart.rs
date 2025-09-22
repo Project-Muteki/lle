@@ -99,7 +99,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             port_obj.line_offset += 1;
             if port_obj.line_offset == port_obj.line_buffer.len() || value == 0x0a {
                 let line_buffer = mem::replace(&mut port_obj.line_buffer, [0u8; 80]);
-                let printable = String::from_utf8_lossy(&line_buffer);
+                let printable = String::from_utf8_lossy(&line_buffer[..port_obj.line_offset]);
                 info!("UART{port}: {}", printable.trim());
                 port_obj.line_offset = 0;
             }
