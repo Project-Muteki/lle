@@ -30,8 +30,6 @@ CMD55
     ACMD51
 */
 
-pub const NAME: &str = "SD";
-
 // TODO Find a CID that looks convincing.
 const CID_ESD: [u8; 16] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 
@@ -273,7 +271,7 @@ impl SD {
                 Response::R1(ResponseType1 { cmd, status, busy: false })
             }
             _ => {
-                warn!("{NAME}: Unhandled SD card command 0x{cmd:02x}");
+                warn!("Unhandled SD card command 0x{cmd:02x}");
                 self.term_illegal()
             }
         }

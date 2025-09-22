@@ -7,6 +7,8 @@ mod peripherals;
 mod extdev;
 /// Device emulation context.
 mod device;
+/// CPU exception handling.
+mod exception;
 
 use std::fs::File;
 use std::io;
@@ -16,6 +18,7 @@ use std::io::SeekFrom;
 
 use log::info;
 use unicorn_engine::ArmCpuModel;
+use unicorn_engine::HookType;
 use unicorn_engine::Permission;
 use unicorn_engine::Unicorn;
 use unicorn_engine::Arch;
@@ -28,8 +31,10 @@ use env_logger;
 use device::Device;
 use peripherals::{sic, sys, gpio};
 
-use crate::device::MMIOState;
+use crate::device::ExtraState;
 use crate::device::UnicornContext;
+use crate::peripherals::rtc;
+use crate::peripherals::uart;
 
 // TODO: Move this out of main
 #[derive(Debug)]
@@ -111,16 +116,20 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 /// 
 /// This does not populate registers, nor boots from the SD card. These are handled in run_bootrom().
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
-    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, MMIOState::default())?;
+    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, ExtraState::default())?;
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
 
     // Stop condition hook
     uc.add_code_hook(0, 0xffffffff, device::check_stop_condition)?;
 
+    uc.add_mem_hook(HookType::MEM_UNMAPPED, 0, 0xffffffff, exception::unmapped_access)?;
+
     // MMIO registers
     uc.mmio_map(sys::BASE, sys::SIZE, Some(sys::read), Some(sys::write))?;
     uc.mmio_map(sic::BASE, sic::SIZE, Some(sic::read), Some(sic::write))?;
     uc.mmio_map(gpio::BASE, gpio::SIZE, Some(gpio::read), Some(gpio::write))?;
+    uc.mmio_map(rtc::BASE, rtc::SIZE, Some(rtc::read), Some(rtc::write))?;
+    uc.mmio_map(uart::BASE, uart::SIZE, Some(uart::read), Some(uart::write))?;
 
     // Memory
     // SDRAM (32MiB)
@@ -146,8 +155,10 @@ fn main() {
     // TODO move this out of main
     loop {
         let pc = uc.pc_read().unwrap();
-        // TODO: Use code hook to control peripheral ticks.
         uc.emu_start(pc, 0xffffffffffffffff, 0, 0).unwrap();
-        device.tick(uc);
+        if !device.tick(uc) {
+            info!("Device-initiated shutdown.");
+            break;
+        }
     }
 }

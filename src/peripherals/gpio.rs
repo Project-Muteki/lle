@@ -1,12 +1,11 @@
+use log::warn;
 use bit_field::{B1, B2, B4, bitfield};
 
-use crate::{device::{Device, UnicornContext}, peripherals::common::{log_unsupported_read, log_unsupported_write}};
+use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};
 
-pub const NAME: &str = "GPIO";
 pub const BASE: u64 = 0xB8001000;
 pub const SIZE: usize = 0x1000;
 
-// TODO
 const REG_GPIO_BLOCK_START: u64 = 0x0;
 const REG_GPIO_BLOCK_END: u64 = 0x50;
 const REG_IRQSRC_BLOCK_START: u64 = 0x80;
@@ -67,8 +66,21 @@ pub struct GPIOIRQSource {
 #[bitfield]
 #[derive(Default)]
 pub struct GPIODebounce {
-    source: B4,
+    src_irq0: B1,
+    src_irq1: B1,
+    src_irq2: B1,
+    src_irq3: B1,
     delay_power_of_2: B4,
+}
+
+#[bitfield]
+#[derive(Default)]
+pub struct GPIOIRQLatchSource {
+    irq0: B1,
+    irq1: B1,
+    irq2: B1,
+    irq3: B1,
+    _reserved: B4,
 }
 
 #[derive(Default)]
@@ -87,11 +99,12 @@ pub struct GPIOChannel {
 pub struct GPIOConfig {
     ports: [GPIOChannel; 5],
     debounce: GPIODebounce,
+    irq_latch_source: GPIOIRQLatchSource,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if size != 4 {
-        log_unsupported_read(NAME, addr, size);
+        log_unsupported_read!( addr, size);
         return 0;
     }
     match addr {
@@ -104,7 +117,10 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                 0x4 => port_obj.pull_up.get(0, 16).into(),
                 0x8 => port_obj.data_out.get(0, 16).into(),
                 0xc => port_obj.data_in.get(0, 16).into(),
-                _ => panic!("nope"),
+                _ => {
+                    log_unsupported_read!( addr, size);
+                    0
+                },
             }
         }
         REG_IRQSRC_BLOCK_START..REG_IRQSRC_BLOCK_END => {
@@ -120,6 +136,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             uc.get_data().gpio.ports[port].irq_latch.get(0, 16)
         }
         REG_DBNCECON => { uc.get_data().gpio.debounce.get(0, 8) }
+        REG_IRQLHSEL => { uc.get_data().gpio.irq_latch_source.get(0, 4) }
         REG_IRQTGSRC0 => {
             let lo = uc.get_data().gpio.ports[0].irq_trigger_source.get(0, 16) as u32;
             let hi = uc.get_data().gpio.ports[1].irq_trigger_source.get(0, 16) as u32;
@@ -134,7 +151,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             uc.get_data().gpio.ports[4].irq_trigger_source.get(0, 16).into()
         }
         _ => {
-            log_unsupported_read(NAME, addr, size);
+            log_unsupported_read!( addr, size);
             0
         }
     }
@@ -142,7 +159,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
-        log_unsupported_write(NAME, addr, size, value);
+        log_unsupported_write!( addr, size, value);
     }
 
     match addr {
@@ -155,7 +172,9 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
                 0x4 => port_obj.pull_up.set(0, 16, value),
                 0x8 => port_obj.data_out.set(0, 16, value),
                 0xc => port_obj.data_in.set(0, 16, value),
-                _ => panic!("nope"),
+                _ => {
+                    log_unsupported_write!( addr, size, value);
+                },
             }
         }
         REG_IRQSRC_BLOCK_START..REG_IRQSRC_BLOCK_END => {
@@ -185,7 +204,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             uc.get_data_mut().gpio.ports[4].irq_trigger_source.set(0, 16, value & 0xffff);
         }
         _ => {
-            log_unsupported_write(NAME, addr, size, value);
+            log_unsupported_write!( addr, size, value);
         }
     }
 }

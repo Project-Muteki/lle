@@ -3,9 +3,8 @@ use log::warn;
 
 use crate::device::{Device, UnicornContext};
 use crate::extdev::sd::Response;
-use crate::peripherals::common::{log_unsupported_read, log_unsupported_write};
+use crate::{log_unsupported_read, log_unsupported_write};
 
-pub const NAME: &str = "SIC";
 pub const NAME_DMAC: &str = "DMAC";
 pub const NAME_FMI: &str = "FMI";
 pub const BASE: u64 = 0xB1006000;
@@ -102,13 +101,13 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                 u32::from_le_bytes(<[u8; 4]>::try_from(&fifo[fifo_addr..fifo_addr+4]).unwrap()).into()
             }
             _ => {
-                log_unsupported_read(NAME, addr, size);
+                log_unsupported_read!( addr, size);
                 0
             }
         };
     }
     if size != 4 {
-        log_unsupported_read(NAME, addr, size);
+        log_unsupported_read!( addr, size);
         return 0;
     }
     let sic = &uc.get_data().sic;
@@ -120,7 +119,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             }
         }
         _ => {
-            log_unsupported_read(NAME, addr, size);
+            log_unsupported_read!( addr, size);
             0
         }
     }
@@ -154,11 +153,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
                 fifo[fifo_addr + 2] = (value >> 16) as u8;
                 fifo[fifo_addr + 3] = (value >> 24) as u8;
             }
-            _ => log_unsupported_write(NAME, addr, size, value),
+            _ => log_unsupported_write!( addr, size, value),
         };
     }
     if size != 4 {
-        log_unsupported_write(NAME, addr, size, value);
+        log_unsupported_write!( addr, size, value);
         return;
     }
     let sic = &mut data.sic;
@@ -168,7 +167,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             let sd_control = &mut sic.sd_control;
             sd_control.set(0, 32, value);
         }
-        _ => log_unsupported_write(NAME, addr, size, value),
+        _ => log_unsupported_write!( addr, size, value),
     }
 }
 
@@ -226,7 +225,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                 }
             }
             None => {
-                warn!("{NAME}: Cannot send command through unmapped SD port {sd_port}");
+                warn!("Cannot send command through unmapped SD port {sd_port}");
             }
         }
     }
