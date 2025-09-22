@@ -101,13 +101,13 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                 u32::from_le_bytes(<[u8; 4]>::try_from(&fifo[fifo_addr..fifo_addr+4]).unwrap()).into()
             }
             _ => {
-                log_unsupported_read!( addr, size);
+                log_unsupported_read!(addr, size);
                 0
             }
         };
     }
     if size != 4 {
-        log_unsupported_read!( addr, size);
+        log_unsupported_read!(addr, size);
         return 0;
     }
     let sic = &uc.get_data().sic;
@@ -119,7 +119,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             }
         }
         _ => {
-            log_unsupported_read!( addr, size);
+            log_unsupported_read!(addr, size);
             0
         }
     }
@@ -153,11 +153,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
                 fifo[fifo_addr + 2] = (value >> 16) as u8;
                 fifo[fifo_addr + 3] = (value >> 24) as u8;
             }
-            _ => log_unsupported_write!( addr, size, value),
+            _ => log_unsupported_write!(addr, size, value),
         };
     }
     if size != 4 {
-        log_unsupported_write!( addr, size, value);
+        log_unsupported_write!(addr, size, value);
         return;
     }
     let sic = &mut data.sic;
@@ -167,7 +167,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             let sd_control = &mut sic.sd_control;
             sd_control.set(0, 32, value);
         }
-        _ => log_unsupported_write!( addr, size, value),
+        _ => log_unsupported_write!(addr, size, value),
     }
 }
 

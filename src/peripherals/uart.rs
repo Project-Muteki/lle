@@ -8,11 +8,6 @@ use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsuppor
 pub const BASE: u64 = 0xB8008000;
 pub const SIZE: usize = 0x1000;
 
-pub const UART0_BLOCK_START: u64 = 0x0;
-pub const UART0_BLOCK_END: u64 = UART0_BLOCK_START + 0x100;
-pub const UART1_BLOCK_START: u64 = UART0_BLOCK_END;
-pub const UART1_BLOCK_END: u64 = UART1_BLOCK_START + 0x100;
-
 pub const REG_UART_DATA: u64 = 0x0;
 pub const REG_UART_IER: u64 = 0x4;
 pub const REG_UART_FCR: u64 = 0x8;
@@ -78,13 +73,13 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             match paddr {
                 REG_UART_FSR => uc.get_data().uart.ports[port].fifo_status.get(0, 32),
                 _ => {
-                    log_unsupported_read!( addr, size);
+                    log_unsupported_read!(addr, size);
                     0
                 }
             }
         }
         _ => {
-            log_unsupported_read!( addr, size);
+            log_unsupported_read!(addr, size);
             0
         }
     }
@@ -93,7 +88,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 }
 
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
-    //log_unsupported_write!( addr, size, value);
+    //log_unsupported_write!(addr, size, value);
     let port = usize::from(((addr >> 8) & 0x1) as u8);
     let paddr = addr & 0xff;
 
@@ -109,12 +104,12 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
                 port_obj.line_offset = 0;
             }
         } else {
-            log_unsupported_write!( addr, size, value);
+            log_unsupported_write!(addr, size, value);
         },
         4 => match paddr {
-            _ => log_unsupported_write!( addr, size, value),
+            _ => log_unsupported_write!(addr, size, value),
         },
-        _ => log_unsupported_write!( addr, size, value),
+        _ => log_unsupported_write!(addr, size, value),
     }
 }
 

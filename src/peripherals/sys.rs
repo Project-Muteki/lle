@@ -97,7 +97,7 @@ pub struct ClockConfig {
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if size != 4 {
-        log_unsupported_read!( addr, size);
+        log_unsupported_read!(addr, size);
         return 0;
     }
 
@@ -112,7 +112,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             mmio_get_store_only(uc, addr)
         }
         _ => {
-            log_unsupported_read!( addr, size);
+            log_unsupported_read!(addr, size);
             mmio_get_store_only(uc, addr)
         }
     }
@@ -120,7 +120,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
-        log_unsupported_write!( addr, size, value);
+        log_unsupported_write!(addr, size, value);
     }
 
     match addr {
@@ -147,7 +147,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             mmio_set_store_only(uc, addr, value);
         }
         _ => {
-            log_unsupported_write!( addr, size, value);
+            log_unsupported_write!(addr, size, value);
             mmio_set_store_only(uc, addr, value);
         }
     }

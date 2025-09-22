@@ -104,7 +104,7 @@ pub struct GPIOConfig {
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if size != 4 {
-        log_unsupported_read!( addr, size);
+        log_unsupported_read!(addr, size);
         return 0;
     }
     match addr {
@@ -118,7 +118,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                 0x8 => port_obj.data_out.get(0, 16).into(),
                 0xc => port_obj.data_in.get(0, 16).into(),
                 _ => {
-                    log_unsupported_read!( addr, size);
+                    log_unsupported_read!(addr, size);
                     0
                 },
             }
@@ -151,7 +151,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             uc.get_data().gpio.ports[4].irq_trigger_source.get(0, 16).into()
         }
         _ => {
-            log_unsupported_read!( addr, size);
+            log_unsupported_read!(addr, size);
             0
         }
     }
@@ -159,7 +159,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
-        log_unsupported_write!( addr, size, value);
+        log_unsupported_write!(addr, size, value);
     }
 
     match addr {
@@ -173,7 +173,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
                 0x8 => port_obj.data_out.set(0, 16, value),
                 0xc => port_obj.data_in.set(0, 16, value),
                 _ => {
-                    log_unsupported_write!( addr, size, value);
+                    log_unsupported_write!(addr, size, value);
                 },
             }
         }
@@ -204,7 +204,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             uc.get_data_mut().gpio.ports[4].irq_trigger_source.set(0, 16, value & 0xffff);
         }
         _ => {
-            log_unsupported_write!( addr, size, value);
+            log_unsupported_write!(addr, size, value);
         }
     }
 }
