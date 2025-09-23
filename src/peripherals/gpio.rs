@@ -97,9 +97,9 @@ pub struct GPIOChannel {
 
 #[derive(Default)]
 pub struct GPIOConfig {
-    ports: [GPIOChannel; 5],
-    debounce: GPIODebounce,
-    irq_latch_source: GPIOIRQLatchSource,
+    pub ports: [GPIOChannel; 5],
+    pub debounce: GPIODebounce,
+    pub irq_latch_source: GPIOIRQLatchSource,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {

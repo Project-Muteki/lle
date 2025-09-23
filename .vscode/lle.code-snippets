@@ -20,6 +20,7 @@
 		"prefix": "!peripheral_template",
 		"description": "Peripheral template",
 		"body": [
+			"use log::warn;",
 			"use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};\n",
 			"pub const BASE: u64 = ${1:0xB0000000};",
 			"pub const SIZE: usize = ${2:0x1000};\n",

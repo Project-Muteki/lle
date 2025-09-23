@@ -1,8 +1,8 @@
 use bit_field::{B1, B5, B6, B8, bitfield};
-use log::{info, warn};
+use log::{info, warn, debug};
 
 use crate::{log_unsupported_read, log_unsupported_write};
-use crate::device::{Device, StopReason, UnicornContext};
+use crate::device::{Device, QuitDetail, StopReason, UnicornContext};
 use crate::peripherals::common::{mmio_get_store_only, mmio_set_store_only};
 
 pub const BASE: u64 = 0xB0000000;
@@ -109,11 +109,11 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         REG_AHBCLK => { uc.get_data().clk.ahbclk.get(0, 32) }
         REG_APBCLK => { uc.get_data().clk.apbclk.get(0, 32) }
         REG_GPAFUN | REG_GPBFUN | REG_GPCFUN | REG_GPDFUN | REG_GPEFUN => {
-            mmio_get_store_only(uc, addr)
+            mmio_get_store_only(uc, BASE + addr)
         }
         _ => {
             log_unsupported_read!(addr, size);
-            mmio_get_store_only(uc, addr)
+            mmio_get_store_only(uc, BASE + addr)
         }
     }
 }
@@ -127,34 +127,34 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_AHBCLK => { uc.get_data_mut().clk.ahbclk.set(0, 32, value) }
         REG_APBCLK => { uc.get_data_mut().clk.apbclk.set(0, 32, value) }
         REG_GPAFUN => {
-            info!("GPIOA config 0x{value:08x}");
-            mmio_set_store_only(uc, addr, value);
+            debug!("GPIOA config 0x{value:08x}");
+            mmio_set_store_only(uc, BASE + addr, value);
         }
         REG_GPBFUN => {
-            info!("GPIOB config 0x{value:08x}");
-            mmio_set_store_only(uc, addr, value);
+            debug!("GPIOB config 0x{value:08x}");
+            mmio_set_store_only(uc, BASE + addr, value);
         }
         REG_GPCFUN => {
-            info!("GPIOC config 0x{value:08x}");
-            mmio_set_store_only(uc, addr, value);
+            debug!("GPIOC config 0x{value:08x}");
+            mmio_set_store_only(uc, BASE + addr, value);
         }
         REG_GPDFUN => {
-            info!("GPIOD config 0x{value:08x}");
-            mmio_set_store_only(uc, addr, value);
+            debug!("GPIOD config 0x{value:08x}");
+            mmio_set_store_only(uc, BASE + addr, value);
         }
         REG_GPEFUN => {
-            info!("GPIOE config 0x{value:08x}");
-            mmio_set_store_only(uc, addr, value);
+            debug!("GPIOE config 0x{value:08x}");
+            mmio_set_store_only(uc, BASE + addr, value);
         }
         _ => {
             log_unsupported_write!(addr, size, value);
-            mmio_set_store_only(uc, addr, value);
+            mmio_set_store_only(uc, BASE + addr, value);
         }
     }
 }
 
 pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
     if uc.get_data().clk.ahbclk.get_cpu() == 0 {
-        uc.get_data_mut().stop_reason = StopReason::Quit;
+        uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::CPUHalt);
     }
 }

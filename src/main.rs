@@ -106,6 +106,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     config_clk.ahbclk.set_cpu(1);
     config_clk.ahbclk.set_sram(1);
 
+    // VBAT comparator input
+    uc.get_data_mut().gpio.ports[0].data_in.set_p3(1);
+
     // TODO: Set other initial states
 
     info!("bootrom_hle: BootROM stage done.");
@@ -157,7 +160,6 @@ fn main() {
         let pc = uc.pc_read().unwrap();
         uc.emu_start(pc, 0xffffffffffffffff, 0, 0).unwrap();
         if !device.tick(uc) {
-            info!("Device-initiated shutdown.");
             break;
         }
     }

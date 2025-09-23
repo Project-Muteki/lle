@@ -1,14 +1,34 @@
+use core::fmt;
 use std::collections::HashMap;
 
+use log::info;
 use unicorn_engine::Unicorn;
 
 use crate::{extdev::sd::SD, peripherals::{gpio, rtc, sic, sys, uart}};
 
 #[derive(Default, Debug, PartialEq)]
+pub enum QuitDetail {
+    #[default]
+    UserSpecified,
+    CPUException,
+    CPUHalt,
+}
+
+impl fmt::Display for QuitDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UserSpecified => { write!(f, "Stopping emulator...") }
+            Self::CPUException => { write!(f, "CPU exception occurred and user asked us to quit on this type of exception.") }
+            Self::CPUHalt => { write!(f, "CPU halted.") }
+        }
+    }
+}
+
+#[derive(Default, Debug, PartialEq)]
 pub enum StopReason {
     #[default]
     Run,
-    Quit,
+    Quit(QuitDetail),
     TickDevice,
 }
 
@@ -54,12 +74,26 @@ impl Device {
     ///
     /// This will modify both the device states and the emulator states associated with it.
     pub fn tick(&mut self, uc: &mut UnicornContext) -> bool {
+        match &uc.get_data().stop_reason {
+            StopReason::Quit(reason) => {
+                info!("Quit condition pre-check: {reason}");
+                return false;
+            }
+            _ => {}
+        }
+
         sys::tick(uc, self);
         sic::tick(uc, self);
         gpio::tick(uc, self);
         uart::tick(uc, self);
         rtc::tick(uc, self);
 
-        !(uc.get_data().stop_reason == StopReason::Quit)
+        match &uc.get_data().stop_reason {
+            StopReason::Quit(reason) => {
+                info!("Quit condition post-check: {reason}");
+                false
+            }
+            _ => true
+        }
     }
 }
