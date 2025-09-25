@@ -44,6 +44,7 @@ pub enum RuntimeError {
     LoaderParserFailed,
     LoaderInvalidMagic,
     SDAlreadyMounted,
+    SDNotMounted,
 }
 
 impl From<io::Error> for RuntimeError {
@@ -163,4 +164,7 @@ fn main() {
             break;
         }
     }
+
+    device.internal_sd.unmount();
+    device.external_sd.unmount();
 }
