@@ -3,20 +3,8 @@ use std::fmt::Display;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
-use bit_field::B1;
-use bit_field::B2;
-use bit_field::B3;
-use bit_field::B4;
-use bit_field::B5;
-use bit_field::B6;
-use bit_field::B7;
-use bit_field::B8;
-use bit_field::B12;
-use bit_field::B22;
-use bit_field::bitfield;
-use log::debug;
-use log::error;
-use log::warn;
+use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, B12, B22, bitfield};
+use log::{debug, error, warn};
 
 use crate::RuntimeError;
 
