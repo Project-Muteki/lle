@@ -25,7 +25,7 @@ CMD16
 CMD18
 CMD25
 CMD55
-    ACMD6 (?)
+    ACMD6
     ACMD41
     ACMD51
 */
@@ -383,31 +383,6 @@ impl CardSpecific {
     }
 }
 
-// fn crc7(data: &[u8]) -> u8 {
-//     const CRC7_POLY: u8 = 0x89;
-
-//     let mut crc = 0u8;
-//     data.iter().for_each(|byte| {
-//         crc ^= byte;
-//         for _ in 0..8 {
-//             crc = if crc & 0x80 == 0x80 {
-//                 (crc << 1) ^ (CRC7_POLY << 1)
-//             } else {
-//                 crc << 1
-//             }
-//         }
-//     });
-//     crc >> 1
-// }
-
-// #[test]
-// fn test_crc7() {
-//     const TEST_VEC: [u8; 15] = [0x40, 0x0e, 0x00, 0x32, 0x5b, 0x59, 0x00, 0x00, 0xed, 0x9f, 0x7f, 0x80, 0x0a, 0x40, 0x00];
-//     const TEST_VEC_2: [u8; 15] = [0x40, 0x0e, 0x00, 0x32, 0x5b, 0x59, 0x00, 0x00, 0xef, 0x37, 0x7f, 0x80, 0x0a, 0x40, 0x00];
-//     assert_eq!(crc7(&TEST_VEC), 0x49);
-//     assert_eq!(crc7(&TEST_VEC_2), 0x12);
-// }
-
 #[derive(Default)]
 pub struct SD {
     csd: Option<CardSpecific>,
@@ -454,6 +429,15 @@ impl SD {
             // ACMD
             // TODO
             return match cmd {
+                6 => {
+                    if self.card_status.get_current_state() == CurrentState::Transfer {
+                        debug!("ACMD6 arg=0x{arg:08x}");
+                        let status = self.card_status.after_read();
+                        Response::R1(ResponseType1 { cmd, status, busy: false })
+                    } else {
+                        self.term_illegal()
+                    }
+                }
                 41 => {
                     if self.card_status.get_current_state() == CurrentState::Idle {
                         let is_sdhc = match &self.csd {
