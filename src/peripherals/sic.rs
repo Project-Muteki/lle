@@ -1,5 +1,5 @@
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
-use log::{debug, warn};
+use log::{debug, error, warn};
 
 use crate::device::{Device, UnicornContext};
 use crate::extdev::sd::Response;
@@ -42,11 +42,13 @@ const REG_SDTMOUT: u64 = BASE_FMI + 0x03c;
 pub struct SICConfig {
     dma_control: DMAControl,
     dma_dest_addr: Option<u64>,
+    dma_irq_status: DMAIRQFlags,
     fmi_control: FMIControl,
     sd_arg: u32,
     sd_response: (u32, u32),
     sd_control: SDCR,
-    sd_irq: IRQStatus,
+    sd_irq: SDIRQStatus,
+    sd_io_size: u64,
     fifo: [u8; 0x400],
     fmi_irq_enable: bool,
     fmi_irq_status: bool,
@@ -57,11 +59,13 @@ impl Default for SICConfig {
         Self {
             dma_control: Default::default(),
             dma_dest_addr: None,
+            dma_irq_status: Default::default(),
             fmi_control: Default::default(),
-            sd_arg: 0u32,
+            sd_arg: Default::default(),
             sd_response: Default::default(),
             sd_control: Default::default(),
             sd_irq: Default::default(),
+            sd_io_size: 1u64,
             fifo: [0u8; 1024],
             fmi_irq_enable: false,
             fmi_irq_status: false,
@@ -113,13 +117,13 @@ struct SDCR {
 
 #[bitfield]
 #[derive(Default)]
-struct IRQStatus {
+struct SDIRQStatus {
     block_xfer_done: B1,
     crc: B1,
     crc_ok_cmd: B1,
     crc_ok_dat: B1,
     reserved_crc_ok: B3,
-    data0: B1,
+    available: B1,
     cd: B1,
     reserved_9: B1,
     sdio: B1,
@@ -133,6 +137,14 @@ struct IRQStatus {
     reserved_19: B5,
     r1b: B1,
     reserved_25: B7,
+}
+
+#[bitfield]
+#[derive(Default)]
+struct DMAIRQFlags {
+    target_abort: B1,
+    wrong_eot: B1,
+    reserved_2: B6,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -174,6 +186,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
                 None => 0u64,
             }
         }
+        REG_DMACISR => sic.dma_irq_status.get(0, 8),
         REG_FMICR => sic.fmi_control.get(0, 8),
         REG_FMIIER => sic.fmi_irq_enable.into(),
         REG_FMIISR => sic.fmi_irq_status.into(),
@@ -185,6 +198,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         }
         REG_SDRSP0 => sic.sd_response.0.into(),
         REG_SDRSP1 => sic.sd_response.1.into(),
+        REG_SDBLEN => (sic.sd_io_size - 1) & 0xffffffff,
         _ => {
             log_unsupported_read!(addr, size);
             0
@@ -229,6 +243,8 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     let sic = &mut data.sic;
     match addr {
         REG_DMACCSR => sic.dma_control.set(0, 16, value),
+        REG_DMACSAR => sic.dma_dest_addr = Some(value),
+        REG_DMACISR => sic.dma_irq_status.set(0, 8, value),
         REG_FMICR => sic.fmi_control.set(0, 8, value),
         REG_FMIIER => sic.fmi_irq_enable = value & 1 == 1,
         REG_FMIISR => sic.fmi_irq_status = value & 1 == 1,
@@ -241,52 +257,18 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             debug!("Write REG_SDISR <= 0x{value:08x}");
             sic.sd_irq.set(0, 32, value)
         }
+        REG_SDBLEN => sic.sd_io_size = (value + 1) & 0xffffffff,
         _ => log_unsupported_write!(addr, size, value),
     }
 }
 
-fn check_clock_switch(uc: &mut UnicornContext) -> bool {
-    let sd_control = &mut uc.get_data_mut().sic.sd_control;
-    if sd_control.get_clk74_oe() == 1 {
-        debug!("SD slow clock on");
-        sd_control.set_clk74_oe(0);
-        true
-    } else if sd_control.get_clk8_oe() == 1 {
-        debug!("SD fast clock on");
-        sd_control.set_clk8_oe(0);
-        true
-    } else {
-        false
-    }
-}
 pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
     // Do not tick if clock is disabled
     if uc.get_data().clk.ahbclk.get_sic() == 0 {
         return;
     }
 
-    if uc.get_data().sic.dma_control.get_reset() == 1 {
-        debug!("{NAME_DMAC}: Reset");
-        // TODO: Reset callbacks go here.
-        uc.get_data_mut().sic.dma_control.set_reset(0);
-        return;
-    }
-
-    if uc.get_data().sic.fmi_control.get_reset() == 1 {
-        debug!("{NAME_FMI}: Reset");
-        // TODO: Reset callbacks go here.
-        uc.get_data_mut().sic.fmi_control.set_reset(0);
-        return;
-    }
-
-    if uc.get_data().sic.sd_control.get_swrst() == 1 {
-        debug!("{NAME_SD}: Reset");
-        // TODO: Reset callbacks go here.
-        uc.get_data_mut().sic.sd_control.set_swrst(0);
-        return;
-    }
-
-    if check_clock_switch(uc) {
+    if check_reset(uc) || check_delay_condition(uc) {
         return;
     }
 
@@ -295,6 +277,8 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
     let sd_port = sd_control.get_sdport();
     let has_data_in = sd_control.get_di_en() == 1;
     let has_data_out = sd_control.get_do_en() == 1;
+
+    let mut skip_data = false;
 
     let cmd = sd_control.get_cmd_code();
     let arg = uc.get_data().sic.sd_arg;
@@ -313,35 +297,42 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                     Response::R1(response_type1) => {
                         sic_mut.sd_response = response_type1.into();
                         sic_mut.sd_control.set_ri_en(0);
-                        sic_mut.sd_control.set_co_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
                     Response::R2(response_type2) => {
-                        sic_mut.fifo[..response_type2.cid_csd.len()].copy_from_slice(&response_type2.cid_csd);
+                        // Needs to include header as well
+                        sic_mut.fifo[0] = 0b00111111;
+                        sic_mut.fifo[1..response_type2.cid_csd.len()+1].copy_from_slice(&response_type2.cid_csd);
                         sic_mut.sd_control.set_r2_en(0);
-                        sic_mut.sd_control.set_co_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
                     Response::R3(response_type3) => {
                         sic_mut.sd_response = response_type3.into();
                         sic_mut.sd_control.set_ri_en(0);
-                        sic_mut.sd_control.set_co_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
                     Response::R6(response_type6) => {
                         sic_mut.sd_response = response_type6.into();
                         sic_mut.sd_control.set_ri_en(0);
-                        sic_mut.sd_control.set_co_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
                     Response::R7(response_type7) => {
                         sic_mut.sd_response = response_type7.into();
                         sic_mut.sd_control.set_ri_en(0);
-                        sic_mut.sd_control.set_co_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
-                    Response::RNone => {},
+                    Response::RNone => {
+                        sic_mut.sd_irq.set_timeout_cmd(1);
+                        // Skip any data transfer if pending
+                        skip_data = true;
+                        if has_data_in || has_data_out {
+                            sic_mut.sd_control.set_di_en(0);
+                            sic_mut.sd_control.set_do_en(0);
+                            sic_mut.sd_irq.set_timeout_dat(1);
+                        }
+                    },
                 }
+                sic_mut.sd_control.set_co_en(0);
             }
             None => {
                 warn!("Cannot send command through unmapped SD port {sd_port}");
@@ -349,11 +340,84 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         }
     }
 
-    if has_data_in {
-        todo!();
+    if !skip_data && has_data_in && uc.get_data().sic.dma_dest_addr.is_some() {
+        let dest = uc.get_data().sic.dma_dest_addr.unwrap();
+        let sd_device_op = match sd_port {
+            0 => Some(&mut device.internal_sd),
+            2 => Some(&mut device.external_sd),
+            _ => None
+        };
+
+        match sd_device_op {
+            Some(sd_device) => {
+                let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
+                let mut buf = vec![0u8; size];
+                sd_device.recv_data(&mut buf[..]);
+                uc.mem_write(dest, &buf).unwrap_or_else(
+                    |err| {
+                        error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");
+                        uc.get_data_mut().sic.dma_irq_status.set_target_abort(1);
+                    }
+                );
+            }
+            None => {
+                warn!("Cannot receive data through unmapped SD port {sd_port}");
+            }
+        }
+        uc.get_data_mut().sic.sd_control.set_di_en(0);
     }
 
-    if has_data_out {
+    if !skip_data && has_data_out && uc.get_data().sic.dma_dest_addr.is_some() {
         todo!();
+    }
+}
+
+/// Handle reset condition.
+pub fn check_reset(uc: &mut UnicornContext) -> bool {
+    let mut has_reset = false;
+
+    if uc.get_data().sic.dma_control.get_reset() == 1 {
+        debug!("{NAME_DMAC}: Reset");
+        // TODO: Reset callbacks go here.
+        uc.get_data_mut().sic.dma_control.set_reset(0);
+        has_reset = true;
+    }
+
+    if uc.get_data().sic.fmi_control.get_reset() == 1 {
+        debug!("{NAME_FMI}: Reset");
+        // TODO: Reset callbacks go here.
+        uc.get_data_mut().sic.fmi_control.set_reset(0);
+        has_reset = true;
+    }
+
+    if uc.get_data().sic.sd_control.get_swrst() == 1 {
+        debug!("{NAME_SD}: Reset");
+        // TODO: Reset callbacks go here.
+        uc.get_data_mut().sic.sd_irq.set_available(1);
+        uc.get_data_mut().sic.sd_control.set_swrst(0);
+        has_reset = true;
+    }
+
+    return has_reset;
+}
+
+/// Handle SD card delay conditions
+///
+/// This is generally a no-op because we don't emulate SD card delays.
+fn check_delay_condition(uc: &mut UnicornContext) -> bool {
+    let sd_control = &mut uc.get_data_mut().sic.sd_control;
+    if sd_control.get_clk74_oe() == 1 {
+        debug!("SD delay 74 clock");
+        sd_control.set_clk74_oe(0);
+        true
+    } else if sd_control.get_clk8_oe() == 1 {
+        debug!("SD delay 8 clock");
+        sd_control.set_clk8_oe(0);
+        // HACK: Ensure DAT0 is high (card is available and not busy)
+        // This needs to be changed once we have proper busy signaling (like from dedicated IO thread)
+        uc.get_data_mut().sic.sd_irq.set_available(1);
+        true
+    } else {
+        false
     }
 }

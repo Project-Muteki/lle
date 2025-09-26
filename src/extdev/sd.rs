@@ -15,6 +15,7 @@ use bit_field::B12;
 use bit_field::B22;
 use bit_field::bitfield;
 use log::debug;
+use log::error;
 use log::warn;
 
 use crate::RuntimeError;
@@ -43,7 +44,17 @@ CMD55
 
 const CID_ESD: [u8; 16] = [0x00, 0x45, 0x6d, 0x49, 0x6e, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x6f];
 const CID_XSD: [u8; 16] = [0x00, 0x45, 0x6d, 0x45, 0x78, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x65];
-const SCR_ESD: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+// SD spec V2.00, erases to 0, no security, 1-and-4-bit interface, no optional command support.
+const SCR: [u8; 8] = [0x02, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+// From 6 to 1
+const CARD_FUNC: [u16; 6] = [
+    0b1000000000000001,  // Reserved
+    0b1000000000000001,  // Reserved
+    0b1000000000000001,  // 0.72W
+    0b1000000000000001,  // Type B
+    0b1000000000000001,  // Default
+    0b1000000000000011,  // SDR12, SDR25
+];
 
 const SDSC_MAX_CAPACITY: u64 = 0x80000000;
 
@@ -181,6 +192,7 @@ pub struct CardStatus {
 
 impl CardStatus {
     pub fn after_read(&mut self) -> CardStatus {
+        // TODO cross-check with table 4-43
         let before_clear = self.clone();
         self.set(26, 6, 0);
         self.set_lock_unlock_failed(0);
@@ -205,7 +217,8 @@ pub enum RecvAction {
     #[default]
     None,
     FTLRead{sector_index: u64, sector_count: u64},
-    SDHCPowerProfileRead,
+    SCRRead,
+    FunctionStatus{ arg: u32 },
 }
 
 #[bitfield]
@@ -412,6 +425,7 @@ pub struct SD {
     csd: Option<CardSpecific>,
     card_status: CardStatus,
     rca: u16,
+    selected_functions: u32,
     image_file: Option<fs::File>,
     send_action: SendAction,
     recv_action: RecvAction,
@@ -473,7 +487,19 @@ impl SD {
                         self.term_illegal()
                     }
                 }
+                51 => {
+                    if self.card_status.get_current_state() == CurrentState::Transfer {
+                        debug!("ACMD51");
+                        self.recv_action = RecvAction::SCRRead;
+                        let status = self.card_status.after_read();
+                        self.card_status.set_current_state(CurrentState::SendingData);
+                        Response::R1(ResponseType1 { cmd, status, busy: false })
+                    } else {
+                        self.term_illegal()
+                    }
+                }
                 _ => {
+                    warn!("Unhandled SD card application command {cmd}");
                     self.term_illegal()
                 },
             };
@@ -496,19 +522,55 @@ impl SD {
                 match self.card_status.get_current_state() {
                     CurrentState::Identification | CurrentState::StandBy => {
                         self.card_status.set_current_state(CurrentState::StandBy);
+                        let status = self.card_status.after_read();
                         self.rca = 1;
-                        Response::R6(ResponseType6 { rca: self.rca, status: self.card_status })
+                        Response::R6(ResponseType6 { rca: self.rca, status })
                     }
                     _ => self.term_illegal()
                 }
             }
             6 => {
+                // See 4.3.10
                 if self.card_status.get_current_state() == CurrentState::Transfer {
-                    self.recv_action = RecvAction::SDHCPowerProfileRead;
+                    debug!("CMD6");
+                    self.recv_action = RecvAction::FunctionStatus{arg};
+                    let status = self.card_status.after_read();
                     self.card_status.set_current_state(CurrentState::SendingData);
-                    Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
+                    Response::R1(ResponseType1 { cmd, status, busy: false })
                 } else {
                     self.term_illegal()
+                }
+            }
+            7 => {
+                let rca = u16::try_from(arg >> 16).unwrap();
+                match self.card_status.get_current_state() {
+                    CurrentState::StandBy => {
+                        if rca == self.rca {
+                            // StandBy -> Transfer when addressed.
+                            debug!("CMD7 select RCA={}", self.rca);
+                            self.card_status.set_current_state(CurrentState::Transfer);
+                        }
+                        // StandBy -> StandBy when NOT addressed.
+                        let status = self.card_status.after_read();
+                        Response::R1(ResponseType1 { cmd, status, busy: false })
+                    }
+                    CurrentState::Transfer | CurrentState::SendingData => {
+                        if rca != self.rca {
+                            // {Transfer, SendingData} -> StandBy when NOT addressed.
+                            debug!("CMD7 deselect RCA={}", self.rca);
+                            self.card_status.set_current_state(CurrentState::StandBy);
+                            let status = self.card_status.after_read();
+                            Response::R1(ResponseType1 { cmd, status, busy: false })
+                        } else {
+                            // Illegal when card is already in Transfer state but is being selected.
+                            warn!("Cannot select RCA={rca} as it is already been selected.");
+                            self.term_illegal()
+                        }
+                    }
+                    _ => {
+                        warn!("Invalid select");
+                        self.term_illegal()
+                    }
                 }
             }
             8 => {
@@ -540,7 +602,6 @@ impl SD {
                 Response::R1(ResponseType1 { cmd, status, busy: false })
             }
             _ => {
-                // Stuck at 0x80a00c84
                 warn!("Unhandled SD card command {cmd}");
                 self.term_illegal()
             }
@@ -549,12 +610,76 @@ impl SD {
 
     /// Send data to the emulated SD card through the DAT channel.
     pub fn send_data(&mut self, data: &[u8]) {
-
+        todo!()
     }
 
     /// Receive data from the emulated SD card through the DAT channel.
     pub fn recv_data(&mut self, data: &mut [u8]) {
+        match self.recv_action {
+            RecvAction::None => todo!(),
+            RecvAction::FTLRead { sector_index, sector_count } => todo!(),
+            RecvAction::FunctionStatus{arg} => {
+                if data.len() < 64 {
+                    error!("Buffer is too small for Function Status");
+                    return;
+                }
 
+                // 200mA
+                data[0..2].clone_from_slice(&200u16.to_be_bytes());
+
+                let commit = arg & 0x80000000 != 0;
+                let mut ret_status = 0u32;
+                for group in 0u8..6u8 {
+                    let from_offset = usize::from(group + 1) * 2;
+                    let to_offset = from_offset + 2;
+                    data[from_offset..to_offset].clone_from_slice(&CARD_FUNC[usize::from(group)].to_be_bytes());
+
+                    let grp_shifts = 4 * group;
+                    let new_func = (arg >> grp_shifts) & 0xf;
+                    if new_func == 0xf {
+                        // Keep
+                        ret_status |= self.selected_functions & (0xf << grp_shifts);
+                    } else if u16::try_from(1 << new_func).unwrap() & CARD_FUNC[usize::from(5 - group)] != 0 {
+                        // Possible to select
+                        ret_status |= new_func << grp_shifts;
+                    } else {
+                        // Not possible to select
+                        error!("Unable to select unsupported function group {} function {}.", group + 1, new_func);
+                        ret_status |= (0xf << grp_shifts) | 0x80000000;
+                    }
+                }
+
+                // New functions
+                data[14..17].clone_from_slice(&ret_status.to_be_bytes()[1..4]);
+
+                // Function version 2 - has busy flags
+                data[17] = 0x01;
+
+                // Busy flags
+                data[18..30].fill(0);
+
+                // Reserved
+                data[30..].fill(0);
+
+                if commit && ret_status & 0x80000000 == 0 {
+                    self.selected_functions = ret_status & 0xffffff;
+                }
+
+                debug!("Function Status: {:02x?}", data);
+
+                self.card_status.set_current_state(CurrentState::Transfer);
+                self.recv_action = RecvAction::None;
+            },
+            RecvAction::SCRRead => {
+                if data.len() < 8 {
+                    error!("Buffer is too small for SCR");
+                    return;
+                }
+                data[..8].clone_from_slice(&SCR);
+                self.card_status.set_current_state(CurrentState::Transfer);
+                self.recv_action = RecvAction::None;
+            },
+        }
     }
 
     /// Set the `ILLEGAL_COMMAND` status bit and respond with a no response. Should always use with a return.
