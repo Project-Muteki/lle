@@ -352,7 +352,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
             Some(sd_device) => {
                 let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
                 let mut buf = vec![0u8; size];
-                sd_device.recv_data(&mut buf[..]);
+                sd_device.recv_data(&mut buf);
                 uc.mem_write(dest, &buf).unwrap_or_else(
                     |err| {
                         error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");

@@ -389,6 +389,7 @@ pub struct SD {
     card_status: CardStatus,
     rca: u16,
     selected_functions: u32,
+    io_size: u32,
     image_file: Option<fs::File>,
     send_action: SendAction,
     recv_action: RecvAction,
@@ -450,8 +451,8 @@ impl SD {
                             Response::R3(ResponseType3 { ocr: 0x00ffff00, is_sdhc, power_up: false })
                         } else {
                             debug!("ACMD41 set arg=0x{arg:08x}");
-                            self.card_status.after_read();
                             self.card_status.set_current_state(CurrentState::Ready);
+                            self.card_status.after_read();
                             Response::R3(ResponseType3 { ocr: arg & 0x00ffffff, is_sdhc, power_up: true })
                         }
 
@@ -463,8 +464,8 @@ impl SD {
                     if self.card_status.get_current_state() == CurrentState::Transfer {
                         debug!("ACMD51");
                         self.recv_action = RecvAction::SCRRead;
-                        let status = self.card_status.after_read();
                         self.card_status.set_current_state(CurrentState::SendingData);
+                        let status = self.card_status.after_read();
                         Response::R1(ResponseType1 { cmd, status, busy: false })
                     } else {
                         self.term_illegal()
@@ -506,8 +507,8 @@ impl SD {
                 if self.card_status.get_current_state() == CurrentState::Transfer {
                     debug!("CMD6");
                     self.recv_action = RecvAction::FunctionStatus{arg};
-                    let status = self.card_status.after_read();
                     self.card_status.set_current_state(CurrentState::SendingData);
+                    let status = self.card_status.after_read();
                     Response::R1(ResponseType1 { cmd, status, busy: false })
                 } else {
                     self.term_illegal()
@@ -567,11 +568,28 @@ impl SD {
                     self.term_illegal()
                 }
             }
+            16 => {
+                if self.card_status.get_current_state() == CurrentState::Transfer {
+                    self.card_status.after_read();
+                    if arg == 0 || arg > 512 {
+                        error!("New IO size of {arg} bytes is out of range 1..=512.");
+                        self.card_status.set_block_len_error(1);
+                        Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
+                    } else {
+                        self.io_size = arg;
+                        self.card_status.set_block_len_error(0);
+                        debug!("IO size (block length) changed to {} bytes.", self.io_size);
+                        Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
+                    }
+                } else {
+                    self.term_illegal()
+                }
+            }
             55 => {
                 debug!("CMD55");
-                let status = self.card_status.after_read();
+                self.card_status.after_read();
                 self.card_status.set_app_command(1);
-                Response::R1(ResponseType1 { cmd, status, busy: false })
+                Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
             }
             _ => {
                 warn!("Unhandled SD card command {cmd}");
