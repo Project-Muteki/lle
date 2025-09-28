@@ -41,7 +41,7 @@ const REG_SDTMOUT: u64 = BASE_FMI + 0x03c;
 
 pub struct SICConfig {
     dma_control: DMAControl,
-    dma_dest_addr: Option<u64>,
+    dma_dest_addr: u64,
     dma_irq_status: DMAIRQFlags,
     fmi_control: FMIControl,
     sd_arg: u32,
@@ -58,7 +58,7 @@ impl Default for SICConfig {
     fn default() -> Self {
         Self {
             dma_control: Default::default(),
-            dma_dest_addr: None,
+            dma_dest_addr: Default::default(),
             dma_irq_status: Default::default(),
             fmi_control: Default::default(),
             sd_arg: Default::default(),
@@ -180,12 +180,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     let sic = &uc.get_data().sic;
     match addr {
         REG_DMACCSR => sic.dma_control.get(0, 16),
-        REG_DMACSAR => {
-            match sic.dma_dest_addr {
-                Some(v) => v,
-                None => 0u64,
-            }
-        }
+        REG_DMACSAR => sic.dma_dest_addr,
         REG_DMACISR => sic.dma_irq_status.get(0, 8),
         REG_FMICR => sic.fmi_control.get(0, 8),
         REG_FMIIER => sic.fmi_irq_enable.into(),
@@ -243,7 +238,10 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     let sic = &mut data.sic;
     match addr {
         REG_DMACCSR => sic.dma_control.set(0, 16, value),
-        REG_DMACSAR => sic.dma_dest_addr = Some(value),
+        REG_DMACSAR => {
+            trace!("DMA buffer address: 0x{value:08x}");
+            sic.dma_dest_addr = value
+        }
         REG_DMACISR => sic.dma_irq_status.set(0, 8, value),
         REG_FMICR => sic.fmi_control.set(0, 8, value),
         REG_FMIIER => sic.fmi_irq_enable = value & 1 == 1,
@@ -346,8 +344,8 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         }
     }
 
-    if !skip_data && has_data_in && uc.get_data().sic.dma_dest_addr.is_some() {
-        let dest = uc.get_data().sic.dma_dest_addr.unwrap();
+    if !skip_data && has_data_in {
+        let dest = uc.get_data().sic.dma_dest_addr;
         let sd_device_op = match sd_port {
             0 => Some(&mut device.internal_sd),
             2 => Some(&mut device.external_sd),
@@ -376,6 +374,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                     Ok(_) => {
                         uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(1);
                         uc.get_data_mut().sic.sd_irq.set_block_xfer_done(1);
+                        uc.get_data_mut().sic.dma_dest_addr += u64::try_from(size_final).unwrap();
                     }
                 }
                 uc.get_data_mut().sic.sd_control.set_blkcnt(0);
@@ -387,7 +386,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         uc.get_data_mut().sic.sd_control.set_di_en(0);
     }
 
-    if !skip_data && has_data_out && uc.get_data().sic.dma_dest_addr.is_some() {
+    if !skip_data && has_data_out {
         todo!();
     }
 }

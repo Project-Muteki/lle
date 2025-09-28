@@ -34,6 +34,7 @@ use peripherals::{sic, sys, gpio};
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
 use crate::peripherals::rtc;
+use crate::peripherals::tmr;
 use crate::peripherals::uart;
 
 // TODO: Move this out of main
@@ -134,6 +135,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.mmio_map(gpio::BASE, gpio::SIZE, Some(gpio::read), Some(gpio::write))?;
     uc.mmio_map(rtc::BASE, rtc::SIZE, Some(rtc::read), Some(rtc::write))?;
     uc.mmio_map(uart::BASE, uart::SIZE, Some(uart::read), Some(uart::write))?;
+    uc.mmio_map(tmr::BASE, tmr::SIZE, Some(tmr::read), Some(tmr::write))?;
 
     // Memory
     // SDRAM (32MiB)
