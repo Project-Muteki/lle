@@ -1,10 +1,11 @@
 
-use std::fmt::Display;
+use std::io::{Read, Seek, SeekFrom};
+use std::{fmt::Display};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, B12, B22, bitfield};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 
 use crate::RuntimeError;
 
@@ -49,16 +50,26 @@ const SDSC_MAX_CAPACITY: u64 = 0x80000000;
 #[bitfield]
 #[derive(Default, Debug, PartialEq)]
 pub enum CurrentState {
+    /// Card is partially powered on and waiting for power mode selection.
     #[default]
     Idle,
+    /// Card is fully powered on and waiting for address configuration.
     Ready,
+    /// Card has identified itself and waiting for further address configuration.
     Identification,
+    /// Card is configured but unselected.
     StandBy,
+    /// Card is configured and selected.
     Transfer,
+    /// Card is sending data to the host (host is receiving data from the card).
     SendingData,
+    /// Card is receiving data from the host (host is sending data to the card).
     ReceivingData,
+    /// Card is selected by the host and is writing data to the storage backend.
     Programming,
-    Disabled,
+    /// Card is not selected by the host and is writing data to the storage backend. No status reporting will be done unless it's reselected.
+    Disconnect,
+    /// Card is powered off by the host. It will not process any further commands unless the host power-cycles it.
     Inactive,
     Reserved10,
     Reserved11,
@@ -197,14 +208,14 @@ impl CardStatus {
 pub enum SendAction {
     #[default]
     None,
-    FTLWrite{sector_index: u64, sector_count: u64},
+    FTLWrite{sector_index: u64},
 }
 
 #[derive(Default, Debug)]
 pub enum RecvAction {
     #[default]
     None,
-    FTLRead{sector_index: u64, sector_count: u64},
+    FTLRead{sector_index: u64},
     SCRRead,
     FunctionStatus{ arg: u32 },
 }
@@ -505,7 +516,7 @@ impl SD {
             6 => {
                 // See 4.3.10
                 if self.card_status.get_current_state() == CurrentState::Transfer {
-                    debug!("CMD6");
+                    trace!("CMD6");
                     self.recv_action = RecvAction::FunctionStatus{arg};
                     self.card_status.set_current_state(CurrentState::SendingData);
                     let status = self.card_status.after_read();
@@ -520,7 +531,7 @@ impl SD {
                     CurrentState::StandBy => {
                         if rca == self.rca {
                             // StandBy -> Transfer when addressed.
-                            debug!("CMD7 select RCA={}", self.rca);
+                            trace!("CMD7 select RCA={}", self.rca);
                             self.card_status.set_current_state(CurrentState::Transfer);
                         }
                         // StandBy -> StandBy when NOT addressed.
@@ -530,7 +541,7 @@ impl SD {
                     CurrentState::Transfer | CurrentState::SendingData => {
                         if rca != self.rca {
                             // {Transfer, SendingData} -> StandBy when NOT addressed.
-                            debug!("CMD7 deselect RCA={}", self.rca);
+                            trace!("CMD7 deselect RCA={}", self.rca);
                             self.card_status.set_current_state(CurrentState::StandBy);
                             let status = self.card_status.after_read();
                             Response::R1(ResponseType1 { cmd, status, busy: false })
@@ -568,11 +579,26 @@ impl SD {
                     self.term_illegal()
                 }
             }
+            12 => {
+                match self.card_status.get_current_state() {
+                    CurrentState::SendingData | CurrentState::ReceivingData => {
+                        // TODO: ReceivingData technically needs to wait until the write buffer has been flushed.
+                        // We don't implement asychronous IO operations yet so switching directly to Transfer is good enough for now.
+                        trace!("Continuous data IO end");
+                        self.recv_action = RecvAction::None;
+                        self.send_action = SendAction::None;
+                        self.card_status.set_current_state(CurrentState::Transfer);
+                        let status = self.card_status.after_read();
+                        Response::R1(ResponseType1 { cmd, status, busy: false })
+                    }
+                    _ => self.term_illegal(),
+                }
+            }
             16 => {
                 if self.card_status.get_current_state() == CurrentState::Transfer {
                     self.card_status.after_read();
                     if arg == 0 || arg > 512 {
-                        error!("New IO size of {arg} bytes is out of range 1..=512.");
+                        warn!("New IO size of {arg} bytes is out of range 1..=512.");
                         self.card_status.set_block_len_error(1);
                         Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
                     } else {
@@ -585,8 +611,18 @@ impl SD {
                     self.term_illegal()
                 }
             }
+            18 => {
+                if self.card_status.get_current_state() == CurrentState::Transfer {
+                    self.recv_action = RecvAction::FTLRead { sector_index: arg.into() };
+                    self.card_status.set_current_state(CurrentState::SendingData);
+                    let status = self.card_status.after_read();
+                    Response::R1(ResponseType1 { cmd, status, busy: false })
+                } else {
+                    self.term_illegal()
+                }
+            }
             55 => {
-                debug!("CMD55");
+                trace!("CMD55");
                 self.card_status.after_read();
                 self.card_status.set_app_command(1);
                 Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
@@ -607,7 +643,26 @@ impl SD {
     pub fn recv_data(&mut self, data: &mut [u8]) {
         match self.recv_action {
             RecvAction::None => todo!(),
-            RecvAction::FTLRead { sector_index, sector_count } => todo!(),
+            RecvAction::FTLRead { sector_index } => {
+                if data.len() % 512 != 0 {
+                    warn!("Buffer size is not multiple of sectors");
+                }
+
+                let image_file = self.image_file.as_mut().unwrap();
+                image_file.seek(SeekFrom::Start(512 * sector_index)).unwrap_or_else(|err| {
+                    error!("Seeking to sector {sector_index} failed: {err:?}");
+                    0u64
+                });
+
+                image_file.read_exact(data).unwrap_or_else(|err| {
+                    error!("Reading {} bytes from sector {} failed: {:?}", data.len(), sector_index, err);
+                });
+
+                trace!("Read {} bytes from sector {}", data.len(), sector_index);
+
+                let new_sector_index = sector_index + u64::try_from(data.len()).unwrap() / 512;
+                self.recv_action = RecvAction::FTLRead { sector_index: new_sector_index };
+            },
             RecvAction::FunctionStatus{arg} => {
                 if data.len() < 64 {
                     error!("Buffer is too small for Function Status");
@@ -665,6 +720,7 @@ impl SD {
                     error!("Buffer is too small for SCR");
                     return;
                 }
+                debug!("SCR={SCR:02x?}");
                 data[..8].clone_from_slice(&SCR);
                 self.card_status.set_current_state(CurrentState::Transfer);
                 self.recv_action = RecvAction::None;

@@ -1,5 +1,5 @@
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 
 use crate::device::{Device, UnicornContext};
 use crate::extdev::sd::Response;
@@ -193,7 +193,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         REG_SDCR => sic.sd_control.get(0, 32),
         REG_SDISR => {
             let reg = sic.sd_irq.get(0, 32);
-            debug!("Read REG_SDISR => 0x{reg:08x}");
+            trace!("Read REG_SDISR => 0x{reg:08x}");
             reg
         }
         REG_SDRSP0 => sic.sd_response.0.into(),
@@ -254,8 +254,14 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             sd_control.set(0, 32, value);
         }
         REG_SDISR => {
-            debug!("Write REG_SDISR <= 0x{value:08x}");
-            sic.sd_irq.set(0, 32, value)
+            trace!("Write REG_SDISR <= 0x{value:08x}");
+            if value == 0x00000001 {
+                // HACK: Special case: clear SDISR_BLKD_IF (?)
+                // TODO: there might be more of these type of operations elsewhere. More research needed.
+                sic.sd_irq.set_block_xfer_done(0);
+            } else {
+                sic.sd_irq.set(0, 32, value);
+            }
         }
         REG_SDBLEN => sic.sd_io_size = (value + 1) & 0xffffffff,
         _ => log_unsupported_write!(addr, size, value),
@@ -351,14 +357,28 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         match sd_device_op {
             Some(sd_device) => {
                 let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
-                let mut buf = vec![0u8; size];
+                let mult = usize::from(uc.get_data().sic.sd_control.get_blkcnt());
+                // TODO multiply by blkcnt if that value is set, and then the recv_data routine will need to try to fill the slice as much as
+                // possible until the limit on the SD card side has been reached.
+                let size_final = if mult == 0 {
+                    size
+                } else {
+                    size * mult
+                };
+                let mut buf = vec![0u8; size_final];
                 sd_device.recv_data(&mut buf);
-                uc.mem_write(dest, &buf).unwrap_or_else(
-                    |err| {
+                match uc.mem_write(dest, &buf) {
+                    Err(err) => {
                         error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");
                         uc.get_data_mut().sic.dma_irq_status.set_target_abort(1);
+                        uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(0);
+                    },
+                    Ok(_) => {
+                        uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(1);
+                        uc.get_data_mut().sic.sd_irq.set_block_xfer_done(1);
                     }
-                );
+                }
+                uc.get_data_mut().sic.sd_control.set_blkcnt(0);
             }
             None => {
                 warn!("Cannot receive data through unmapped SD port {sd_port}");
@@ -407,11 +427,11 @@ pub fn check_reset(uc: &mut UnicornContext) -> bool {
 fn check_delay_condition(uc: &mut UnicornContext) -> bool {
     let sd_control = &mut uc.get_data_mut().sic.sd_control;
     if sd_control.get_clk74_oe() == 1 {
-        debug!("SD delay 74 clock");
+        trace!("SD delay 74 clock");
         sd_control.set_clk74_oe(0);
         true
     } else if sd_control.get_clk8_oe() == 1 {
-        debug!("SD delay 8 clock");
+        trace!("SD delay 8 clock");
         sd_control.set_clk8_oe(0);
         // HACK: Ensure DAT0 is high (card is available and not busy)
         // This needs to be changed once we have proper busy signaling (like from dedicated IO thread)
