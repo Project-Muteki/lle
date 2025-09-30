@@ -38,6 +38,8 @@ pub enum StopReason {
 #[derive(Default)]
 pub struct ExtraState {
     pub stop_reason: StopReason,
+    pub steps: u64,
+
     pub store_only: HashMap<u64, u64>,
     pub clk: sys::ClockConfig,
     pub sic: sic::SICConfig,
@@ -63,11 +65,14 @@ pub type UnicornContext<'a> = Unicorn<'a, ExtraState>;
 /// instruction.
 pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     let data = uc.get_data_mut();
-    data.clk.ticks += 1;
+    data.steps += 1;
+
+    //let steps = data.steps;
     // TODO emulate actual clock behavior
-    if data.clk.ticks % 2 == 0 {
+    if data.steps % 2 == 0 {
         uc.emu_stop().unwrap();
     }
+    //tmr::generate_stop_condition(uc, steps);
 }
 
 impl Device {

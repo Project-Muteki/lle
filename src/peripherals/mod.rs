@@ -1,6 +1,7 @@
 pub mod common;
 pub mod gpio;
 pub mod rtc;
+pub mod sdram;
 pub mod sic;
 pub mod sys;
 pub mod tmr;

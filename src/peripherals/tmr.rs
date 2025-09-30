@@ -1,6 +1,6 @@
 use bit_field::{B1, B2, bitfield};
 use log::warn;
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};
+use crate::{device::{Device, StopReason, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::sys::F_BASE};
 
 pub const BASE: u64 = 0xB8002000;
 pub const SIZE: usize = 0x1000;
@@ -21,7 +21,7 @@ pub struct WatchdogControl {
 
 #[derive(Default)]
 pub struct TimerConfig {
-    watchdog: WatchdogControl,
+    pub watchdog: WatchdogControl,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -54,4 +54,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 
 pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
 
+}
+
+pub fn generate_stop_condition(uc: &mut UnicornContext, ticks: u64) -> StopReason {
+    if ticks % (uc.get_data().clk.apll.get_fout() / F_BASE) == 0 {
+        
+    }
+    StopReason::Run
 }

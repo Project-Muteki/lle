@@ -20,6 +20,7 @@ use log::info;
 use unicorn_engine::ArmCpuModel;
 use unicorn_engine::HookType;
 use unicorn_engine::Permission;
+use unicorn_engine::TlbType;
 use unicorn_engine::Unicorn;
 use unicorn_engine::Arch;
 use unicorn_engine::Mode;
@@ -33,7 +34,9 @@ use peripherals::{sic, sys, gpio};
 
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
+use crate::peripherals::common::mmio_set_store_only;
 use crate::peripherals::rtc;
+use crate::peripherals::sdram;
 use crate::peripherals::tmr;
 use crate::peripherals::uart;
 
@@ -108,8 +111,29 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     config_clk.ahbclk.set_cpu(1);
     config_clk.ahbclk.set_sram(1);
 
+    // SDRAM stub
+    mmio_set_store_only(uc, 0xb0003000, 0x00130456);
+    mmio_set_store_only(uc, 0xb0003030, 0x00001010);
+    mmio_set_store_only(uc, 0xb0003010, 0x00000005);
+    mmio_set_store_only(uc, 0xb0003004, 0x00000021);
+    mmio_set_store_only(uc, 0xb0003004, 0x00000023);
+    mmio_set_store_only(uc, 0xb0003004, 0x00000027);
+    mmio_set_store_only(uc, 0xb000301C, 0x00001002);
+    mmio_set_store_only(uc, 0xb0003018, 0x00000122);
+    mmio_set_store_only(uc, 0xb0003004, 0x00000027);
+    mmio_set_store_only(uc, 0xb0003004, 0x0000002B);
+    mmio_set_store_only(uc, 0xb0003004, 0x0000002B);
+    mmio_set_store_only(uc, 0xb0003018, 0x00000022);
+    mmio_set_store_only(uc, 0xb0003004, 0x00000020);
+    mmio_set_store_only(uc, 0xb0003034, 0x00AAAA00);
+    mmio_set_store_only(uc, 0xb0003008, 0x0000805A);
+    mmio_set_store_only(uc, 0xb0003028, 0x094E7425);
+
     // VBAT comparator input
     uc.get_data_mut().gpio.ports[0].data_in.set_p3(1);
+
+    // UPLL (192MHz)
+    uc.get_data_mut().clk.upll.set_reg(0x0000447e);
 
     // TODO: Set other initial states
 
@@ -123,6 +147,7 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, ExtraState::default())?;
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
+    uc.ctl_tlb_type(TlbType::CPU)?;
 
     // Stop condition hook
     uc.add_code_hook(0, 0xffffffff, device::check_stop_condition)?;
@@ -131,6 +156,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
 
     // MMIO registers
     uc.mmio_map(sys::BASE, sys::SIZE, Some(sys::read), Some(sys::write))?;
+    uc.mmio_map(sdram::BASE, sdram::SIZE, Some(sdram::read), Some(sdram::write))?;
     uc.mmio_map(sic::BASE, sic::SIZE, Some(sic::read), Some(sic::write))?;
     uc.mmio_map(gpio::BASE, gpio::SIZE, Some(gpio::read), Some(gpio::write))?;
     uc.mmio_map(rtc::BASE, rtc::SIZE, Some(rtc::read), Some(rtc::write))?;
