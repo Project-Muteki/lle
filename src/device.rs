@@ -1,10 +1,10 @@
 use core::fmt;
 use std::collections::HashMap;
 
-use log::info;
+use log::{error, info};
 use unicorn_engine::Unicorn;
 
-use crate::{extdev::sd::SD, peripherals::{gpio, rtc, sic, sys, tmr, uart}};
+use crate::{extdev::sd::SD, peripherals::{aic, gpio, rtc, sic, sys, tmr, uart}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -30,6 +30,7 @@ pub enum StopReason {
     Run,
     Quit(QuitDetail),
     TickDevice,
+    AIC,
 }
 
 /// Extra emulator states.
@@ -47,6 +48,7 @@ pub struct ExtraState {
     pub uart: uart::UARTConfig,
     pub rtc: rtc::RTCConfig,
     pub tmr: tmr::TimerConfig,
+    pub aic: aic::AICConfig,
 }
 
 /// Peripheral device emulation context.
@@ -60,6 +62,22 @@ pub struct Device {
 }
 
 pub type UnicornContext<'a> = Unicorn<'a, ExtraState>;
+
+pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
+    let current_reason = &uc.get_data().stop_reason;
+    if matches!(reason, StopReason::Run) {
+        return;
+    }
+    if (
+        matches!(current_reason, StopReason::Run) ||
+        (!matches!(current_reason, StopReason::Quit(_)) && matches!(reason, StopReason::Quit(_)))
+    ) {
+        uc.get_data_mut().stop_reason = reason;
+    }
+    uc.emu_stop().unwrap_or_else(|err| {
+        error!("Failed to stop emulator: {err:?}");
+    })
+}
 
 /// Stops the emulator when a peripheral needs attention from the device emulator. Called after execution of every
 /// instruction.

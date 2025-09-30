@@ -1,4 +1,6 @@
 pub mod common;
+
+pub mod aic;
 pub mod gpio;
 pub mod rtc;
 pub mod sdram;

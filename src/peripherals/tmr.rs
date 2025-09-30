@@ -56,9 +56,8 @@ pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
 
 }
 
-pub fn generate_stop_condition(uc: &mut UnicornContext, ticks: u64) -> StopReason {
+pub fn generate_stop_condition(uc: &mut UnicornContext, ticks: u64) {
     if ticks % (uc.get_data().clk.apll.get_fout() / F_BASE) == 0 {
         
     }
-    StopReason::Run
 }
