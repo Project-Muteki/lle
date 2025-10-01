@@ -32,40 +32,14 @@ pub struct AICConfig {
     pub enabled: u32,
 }
 
+#[allow(dead_code, reason = "For documentation purpose.")]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum InterruptNumber {
-    WDT = 1,
-    EXTINT0,
-    EXTINT1,
-    EXTINT2,
-    EXTINT3,
-    SPU,
-    I2S,
-    VPOST,
-    VIDEOIN,
-    GPU,
-    BLT,
-    FSC,
-    HUART,
-    TMR0,
-    TMR1,
-    UDC,
-    SIC,
-    UHC,
-    EDMA,
-    SPIMS0,
-    SPIMS1,
-    ADC,
-    RTC,
-    UART,
-    PWM,
-    JPG,
-    PWM2,
-    KPI,
-    DES,
-    I2C,
-    PWR,
+    WDT = 1, EXTINT0, EXTINT1, EXTINT2, EXTINT3, SPU, I2S,  // 1..=7
+    VPOST, VIDEOIN, GPU, BLT, FSC, HUART, TMR0, TMR1,  // 8..=15
+    UDC, SIC, UHC, EDMA, SPIMS0, SPIMS1, ADC, RTC,  // 16..=23
+    UART, PWM, JPG, PWM2, KPI, DES, I2C, PWR,  // 24..=31
 }
 
 impl Into<u8> for InterruptNumber {
