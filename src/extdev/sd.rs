@@ -642,7 +642,10 @@ impl SD {
     /// Receive data from the emulated SD card through the DAT channel.
     pub fn recv_data(&mut self, data: &mut [u8]) {
         match self.recv_action {
-            RecvAction::None => todo!(),
+            RecvAction::None => {
+                warn!("Data requested by SIC but no recv_action defined here. \
+                       This is likely a bug of either the emulator or the guest program.");
+            },
             RecvAction::FTLRead { sector_index } => {
                 if data.len() % 512 != 0 {
                     warn!("Buffer size is not multiple of sectors");

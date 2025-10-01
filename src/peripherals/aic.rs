@@ -19,6 +19,7 @@ const REG_AIC_SSCR: u64 = 0x128;
 const REG_AIC_SCCR: u64 = 0x12c;
 const REG_AIC_EOSCR: u64 = 0x130;
 
+/// Flag storage and manipulation for AIC. Actual interrupt dispatch logic is in the `tick()` Device callback.
 #[derive(Default)]
 pub struct AICConfig {
     /// Raw level configuration.
@@ -97,13 +98,11 @@ impl AICConfig {
         u8::try_from((self.levels[offset] >> shift) & 0xff).unwrap()
     }
 
-    /// Utility method for the host part of the emulator to inject an interrupt.
-    ///
-    /// This will automatically initiate an emulator stop when necessary, unlike other register manipulation methods.
-    pub fn post_interrupt(&mut self, uc: &mut UnicornContext, intno: InterruptNumber, incoming: bool, latched: bool) {
+    /// Check whether there's a need to fire ann interrupt, and if so, record it and return `true`.
+    pub fn check_interrupt(&mut self, intno: InterruptNumber, incoming: bool, latched: bool) -> bool {
         let mask: u32 = intno.as_mask();
         if self.enabled & mask != 0 {
-            return;
+            return false;
         }
 
         let level = self.get_level(intno);
@@ -122,9 +121,10 @@ impl AICConfig {
             self.status[usize::from(prio)] |= mask;
             self.status_map |= 1 << (level & 0x7);
 
-            request_stop(uc, StopReason::AIC);
+            return true;
             // Interrupt will then be caught in aic::tick()
         }
+        false
     }
 
     /// Apply an enable mask to the interrupt mask register.
@@ -176,8 +176,6 @@ impl AICConfig {
         self.set_joint_status(js & !mask);
     }
 }
-
-
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if size != 4 {
@@ -248,5 +246,15 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 }
 
 pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
+    // TODO
+}
 
+/// Utility function for the host part of the emulator to inject an interrupt.
+///
+/// This will automatically initiate an emulator stop when necessary.
+#[inline]
+pub fn post_interrupt(uc: &mut UnicornContext, intno: InterruptNumber, incoming: bool, latched: bool) {
+    if uc.get_data_mut().aic.check_interrupt(intno, incoming, latched) {
+        request_stop(uc, StopReason::AIC);
+    }
 }

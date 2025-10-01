@@ -1,8 +1,9 @@
-use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
+use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, B9, bitfield};
 use log::{debug, error, trace, warn};
 
 use crate::device::{Device, UnicornContext};
 use crate::extdev::sd::Response;
+use crate::peripherals::aic::{InterruptNumber, post_interrupt};
 use crate::{log_unsupported_read, log_unsupported_write};
 
 pub const NAME_DMAC: &str = "DMAC";
@@ -42,11 +43,14 @@ const REG_SDTMOUT: u64 = BASE_FMI + 0x03c;
 pub struct SICConfig {
     dma_control: DMAControl,
     dma_dest_addr: u64,
+    dma_irq_enable: DMAIRQFlags,
     dma_irq_status: DMAIRQFlags,
+    dma_count: usize,
     fmi_control: FMIControl,
     sd_arg: u32,
     sd_response: (u32, u32),
     sd_control: SDCR,
+    sd_irq_enable: SDIRQEnable,
     sd_irq: SDIRQStatus,
     sd_io_size: u64,
     fifo: [u8; 0x400],
@@ -59,16 +63,19 @@ impl Default for SICConfig {
         Self {
             dma_control: Default::default(),
             dma_dest_addr: Default::default(),
+            dma_irq_enable: Default::default(),
             dma_irq_status: Default::default(),
+            dma_count: Default::default(),
             fmi_control: Default::default(),
             sd_arg: Default::default(),
             sd_response: Default::default(),
             sd_control: Default::default(),
+            sd_irq_enable: Default::default(),
             sd_irq: Default::default(),
             sd_io_size: 1u64,
             fifo: [0u8; 1024],
-            fmi_irq_enable: false,
-            fmi_irq_status: false,
+            fmi_irq_enable: Default::default(),
+            fmi_irq_status: Default::default(),
         }
     }
 }
@@ -117,21 +124,41 @@ struct SDCR {
 
 #[bitfield]
 #[derive(Default)]
+struct SDIRQEnable {
+    block_xfer_done: B1,
+    crc_error: B1,
+    reserved_2: B6,
+    card_detect: B1,
+    reserved_9: B1,
+    sdio: B1,
+    reserved_11: B1,
+    timeout_cmd: B1,
+    timeout_dat: B1,
+    wakeup: B1,
+    reserved_15: B9,
+    r1b: B1,
+    reserved_25: B5,
+    card_detect_mode: B1,  // 0 - Internal (uses DAT3 status), 1 - External (uses GPIO)
+    reserved_31: B1,
+}
+
+#[bitfield]
+#[derive(Default)]
 struct SDIRQStatus {
     block_xfer_done: B1,
-    crc: B1,
+    crc_error: B1,
     crc_ok_cmd: B1,
     crc_ok_dat: B1,
     reserved_crc_ok: B3,
     available: B1,
-    cd: B1,
+    card_detect_changed: B1,
     reserved_9: B1,
     sdio: B1,
     reserved_11: B1,
     timeout_cmd: B1,
     timeout_dat: B1,
     reserved_14: B2,
-    cd_flag: B1,
+    card_detect: B1,
     reserved_17: B1,
     data1: B1,
     reserved_19: B5,
@@ -181,11 +208,14 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     match addr {
         REG_DMACCSR => sic.dma_control.get(0, 16),
         REG_DMACSAR => sic.dma_dest_addr,
+        REG_DMACBCR => u64::try_from(sic.dma_count & 0xffffffff).unwrap(),
+        REG_DMACIER => sic.dma_irq_enable.get(0, 8),
         REG_DMACISR => sic.dma_irq_status.get(0, 8),
         REG_FMICR => sic.fmi_control.get(0, 8),
         REG_FMIIER => sic.fmi_irq_enable.into(),
         REG_FMIISR => sic.fmi_irq_status.into(),
         REG_SDCR => sic.sd_control.get(0, 32),
+        REG_SDIER => sic.sd_irq_enable.get(0, 32),
         REG_SDISR => {
             let reg = sic.sd_irq.get(0, 32);
             trace!("Read REG_SDISR => 0x{reg:08x}");
@@ -242,6 +272,8 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             trace!("DMA buffer address: 0x{value:08x}");
             sic.dma_dest_addr = value
         }
+        REG_DMACBCR => sic.dma_count = usize::try_from(value & 0xffffffff).unwrap(),
+        REG_DMACIER => sic.dma_irq_enable.set(0, 8, value),
         REG_DMACISR => sic.dma_irq_status.set(0, 8, value),
         REG_FMICR => sic.fmi_control.set(0, 8, value),
         REG_FMIIER => sic.fmi_irq_enable = value & 1 == 1,
@@ -251,15 +283,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             let sd_control = &mut sic.sd_control;
             sd_control.set(0, 32, value);
         }
+        REG_SDIER => sic.sd_irq_enable.set(0, 32, value),
         REG_SDISR => {
-            trace!("Write REG_SDISR <= 0x{value:08x}");
-            if value == 0x00000001 {
-                // HACK: Special case: clear SDISR_BLKD_IF (?)
-                // TODO: there might be more of these type of operations elsewhere. More research needed.
-                sic.sd_irq.set_block_xfer_done(0);
-            } else {
-                sic.sd_irq.set(0, 32, value);
-            }
+            trace!("Clear REG_SDISR mask=0x{value:08x}");
+            let new_val = sic.sd_irq.get(0, 32) & !value & 0xffffffff;
+            sic.sd_irq.set(0, 32, new_val);
         }
         REG_SDBLEN => sic.sd_io_size = (value + 1) & 0xffffffff,
         _ => log_unsupported_write!(addr, size, value),
@@ -304,8 +332,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
                     },
                     Response::R2(response_type2) => {
-                        // Needs to include header as well
-                        sic_mut.fifo[0] = 0b00111111;
+                        sic_mut.fifo[0] = 0b00111111;  // Needs to include header as well
                         sic_mut.fifo[1..response_type2.cid_csd.len()+1].copy_from_slice(&response_type2.cid_csd);
                         sic_mut.sd_control.set_r2_en(0);
                         sic_mut.sd_irq.set_crc_ok_cmd(1);
@@ -329,13 +356,19 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         sic_mut.sd_irq.set_timeout_cmd(1);
                         // Skip any data transfer if pending
                         skip_data = true;
-                        if has_data_in || has_data_out {
+                        let has_data = has_data_in || has_data_out;
+                        if has_data {
                             sic_mut.sd_control.set_di_en(0);
                             sic_mut.sd_control.set_do_en(0);
                             sic_mut.sd_irq.set_timeout_dat(1);
                         }
+
+                        if sic_mut.sd_irq_enable.get_timeout_cmd() == 1 || (has_data && sic_mut.sd_irq_enable.get_timeout_dat() == 1) {
+                            post_interrupt(uc, InterruptNumber::SIC, true, false);
+                        }
                     },
                 }
+                let sic_mut = &mut uc.get_data_mut().sic;
                 sic_mut.sd_control.set_co_en(0);
             }
             None => {
@@ -370,11 +403,18 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");
                         uc.get_data_mut().sic.dma_irq_status.set_target_abort(1);
                         uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(0);
+                        if uc.get_data().sic.dma_irq_enable.get_target_abort() == 1 {
+                            post_interrupt(uc, InterruptNumber::SIC, true, false);
+                        }
                     },
                     Ok(_) => {
+                        uc.get_data_mut().sic.dma_count += size_final;
                         uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(1);
                         uc.get_data_mut().sic.sd_irq.set_block_xfer_done(1);
                         uc.get_data_mut().sic.dma_dest_addr += u64::try_from(size_final).unwrap();
+                        if uc.get_data().sic.sd_irq_enable.get_block_xfer_done() == 1 {
+                            post_interrupt(uc, InterruptNumber::SIC, true, false);
+                        }
                     }
                 }
                 uc.get_data_mut().sic.sd_control.set_blkcnt(0);
