@@ -1,7 +1,7 @@
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, B9, bitfield};
 use log::{debug, error, trace, warn};
 
-use crate::device::{Device, UnicornContext};
+use crate::device::{Device, StopReason, UnicornContext, request_stop};
 use crate::extdev::sd::Response;
 use crate::peripherals::aic::{InterruptNumber, post_interrupt};
 use crate::{log_unsupported_read, log_unsupported_write};
@@ -260,6 +260,8 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             }
             _ => log_unsupported_write!(addr, size, value),
         };
+        request_stop(uc, StopReason::TickDevice);
+        return;
     }
     if size != 4 {
         log_unsupported_write!(addr, size, value);
@@ -292,6 +294,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_SDBLEN => sic.sd_io_size = (value + 1) & 0xffffffff,
         _ => log_unsupported_write!(addr, size, value),
     }
+    request_stop(uc, StopReason::TickDevice);
 }
 
 pub fn tick(uc: &mut UnicornContext, device: &mut Device) {

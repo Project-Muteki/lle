@@ -19,8 +19,26 @@ const REG_AIC_SSCR: u64 = 0x128;
 const REG_AIC_SCCR: u64 = 0x12c;
 const REG_AIC_EOSCR: u64 = 0x130;
 
+const BCS8: [u8; 256] = [
+    0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    6, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    7, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    6, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+    4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
+];
+
 /// Flag storage and manipulation for AIC. Actual interrupt dispatch logic is in the `tick()` Device callback.
-#[derive(Default)]
 pub struct AICConfig {
     /// Raw level configuration.
     pub levels: [u32; 8],
@@ -30,6 +48,19 @@ pub struct AICConfig {
     pub status: [u32; 8],
     /// Interrupt mask bitmap (0 - masked, 1 - unmasked).
     pub enabled: u32,
+    pub current_interrupt: u32,
+}
+
+impl Default for AICConfig {
+    fn default() -> Self {
+        Self {
+            levels: [0x47474747; 8],
+            status_map: Default::default(),
+            status: Default::default(),
+            enabled: Default::default(),
+            current_interrupt: Default::default()
+        }
+    }
 }
 
 #[allow(dead_code, reason = "For documentation purpose.")]
@@ -149,6 +180,30 @@ impl AICConfig {
         let js = self.get_joint_status();
         self.set_joint_status(js & !mask);
     }
+
+    pub fn next_interrupt(&self) -> (u8, u8) {
+        if self.status_map == 0 {
+            warn!("Interrupt status table is empty. This is probably a redundant check.");
+            return (0, 0);
+        }
+        let next_pending_prio = BCS8[usize::from(self.status_map)];
+        let next_pending = self.status[usize::from(next_pending_prio)];
+
+        if next_pending == 0 {
+            error!("Interrupt status table has bad index at prio {next_pending_prio}. This is a bug.");
+            return (next_pending_prio, 0)
+        }
+
+        let mut num = 0;
+        for i in 1..32 {
+            if (1 << i) & next_pending != 0 {
+                num = i;
+                break;
+            }
+        };
+
+        (next_pending_prio, num)
+    }
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -166,6 +221,8 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 
             uc.get_data().aic.levels[usize::try_from(addr / 4).unwrap()].into()
         }
+        REG_AIC_IPER => u64::from(uc.get_data().aic.current_interrupt) << 2,
+        REG_AIC_ISNR => uc.get_data().aic.current_interrupt.into(),
         REG_AIC_IMR => uc.get_data().aic.enabled.into(),
         REG_AIC_ISR => uc.get_data().aic.get_joint_status().into(),
         _ => {
@@ -219,8 +276,12 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     
 }
 
-pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
-    // TODO
+pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
+    if uc.get_data().aic.status_map != 0 {
+        let (prio, num) = uc.get_data().aic.next_interrupt();
+        uc.get_data_mut().aic.current_interrupt = num.into();
+
+    }
 }
 
 /// Utility function for the host part of the emulator to inject an interrupt.

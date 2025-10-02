@@ -1,7 +1,7 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
-use log::{error, info};
+use log::{debug, error, info};
 use unicorn_engine::Unicorn;
 
 use crate::{extdev::sd::SD, peripherals::{aic, gpio, rtc, sic, sys, tmr, uart}};
@@ -63,6 +63,7 @@ pub struct Device {
 
 pub type UnicornContext<'a> = Unicorn<'a, ExtraState>;
 
+/// Defer a stop to right before the next instruction executes, stating the specified reason.
 pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
     let current_reason = &uc.get_data().stop_reason;
     if matches!(reason, StopReason::Run) {
@@ -74,23 +75,25 @@ pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
     ) {
         uc.get_data_mut().stop_reason = reason;
     }
-    uc.emu_stop().unwrap_or_else(|err| {
-        error!("Failed to stop emulator: {err:?}");
-    })
 }
 
-/// Stops the emulator when a peripheral needs attention from the device emulator. Called after execution of every
-/// instruction.
+/// Stops the emulator when a peripheral needs attention from the device emulator.
+/// Called before the execution of every instruction.
 pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     let data = uc.get_data_mut();
-    data.steps += 1;
+    //data.steps += 1;
 
-    //let steps = data.steps;
     // TODO emulate actual clock behavior
-    if data.steps % 2 == 0 {
-        uc.emu_stop().unwrap();
-    }
+    //let steps = data.steps;
     //tmr::generate_stop_condition(uc, steps);
+
+    // Collect either the 
+    if !matches!(data.stop_reason, StopReason::Run) {
+        uc.emu_stop().unwrap_or_else(|err| {
+            error!("Failed to stop emulator: {err:?}");
+        });
+    }
+
 }
 
 impl Device {
@@ -112,7 +115,8 @@ impl Device {
         uart::tick(uc, self);
         rtc::tick(uc, self);
 
-        match &uc.get_data().stop_reason {
+        let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
+        match prev_reason {
             StopReason::Quit(reason) => {
                 info!("Quit condition post-check: {reason}");
                 false

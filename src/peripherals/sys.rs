@@ -4,7 +4,7 @@ use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
 use log::{info, warn, debug};
 
 use crate::{log_unsupported_read, log_unsupported_write};
-use crate::device::{Device, QuitDetail, StopReason, UnicornContext};
+use crate::device::{Device, QuitDetail, StopReason, UnicornContext, request_stop};
 use crate::peripherals::common::{mmio_get_store_only, mmio_set_store_only};
 
 pub const BASE: u64 = 0xB0000000;
@@ -279,7 +279,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 
     match addr {
-        REG_AHBCLK => { uc.get_data_mut().clk.ahbclk.set(0, 32, value) }
+        REG_AHBCLK => {
+            uc.get_data_mut().clk.ahbclk.set(0, 32, value);
+            // AHBCLK may halt the CPU. Request a tick.
+            request_stop(uc, StopReason::TickDevice);
+        }
         REG_APBCLK => { uc.get_data_mut().clk.apbclk.set(0, 32, value) }
         REG_CLKDIV0 => {
             uc.get_data_mut().clk.clkdiv0.set(0, 32, value);
