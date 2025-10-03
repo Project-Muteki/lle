@@ -134,7 +134,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     uc.get_data_mut().gpio.ports[0].data_in.set_p3(1);
 
     // UPLL (192MHz)
+    uc.get_data_mut().clk.apll.set_reg(0x0001c02e);
     uc.get_data_mut().clk.upll.set_reg(0x0000447e);
+    uc.get_data_mut().clk.update_tick_config();
 
     // TODO: Set other initial states
 

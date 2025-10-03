@@ -33,6 +33,7 @@ const REG_APLLCON: u64 = CLK_BASE + 0x20;
 const REG_UPLLCON: u64 = CLK_BASE + 0x24;
 
 pub const F_BASE: u64 = 12_000_000;
+pub const F_BASE_RTC: u64 = 32_000;
 
 #[bitfield]
 #[derive(Default)]
@@ -192,6 +193,23 @@ pub struct ClockDivider4 {
     reserved_27: B5,
 }
 
+#[derive(Default, Debug)]
+pub struct TickConfig {
+    pub f_cpu: u64,
+    pub hclk1: u64,
+    pub apb: u64,
+}
+
+const XIN: PLLConfig = PLLConfig {
+    fout: F_BASE,
+    reg: 0x0,
+};
+
+const X32K: PLLConfig = PLLConfig {
+    fout: F_BASE_RTC,
+    reg: 0x0,
+};
+
 #[derive(Default)]
 pub struct ClockConfig {
     pub ahbclk: AHBCLKRegister,
@@ -203,6 +221,32 @@ pub struct ClockConfig {
     pub clkdiv2: ClockDivider2,
     pub clkdiv3: ClockDivider3,
     pub clkdiv4: ClockDivider4,
+    pub tick_config: TickConfig,
+}
+
+impl ClockConfig {
+    fn get_pll(&self, source: ClockSource) -> &PLLConfig {
+        match source {
+            ClockSource::XIN => &XIN,
+            ClockSource::X32K => &X32K,
+            ClockSource::APLL => &self.apll,
+            ClockSource::UPLL => &self.upll,
+        }
+    }
+
+    pub fn update_tick_config(&mut self) {
+        let sys_div = u64::from(self.clkdiv0.get_sys_prediv() + 1) * u64::from(self.clkdiv0.get_sys_div() + 1);
+        let f_sys = self.get_pll(self.clkdiv0.get_sys_source()).get_fout() / sys_div;
+        self.tick_config.f_cpu = f_sys / u64::from(self.clkdiv4.get_cpu_div() + 1);
+        // 2 CPU ticks == 1 HCLK1 tick if CPU divider is 1, otherwise 1 CPU tick == 1 HCLK1 tick.
+        self.tick_config.hclk1 = if self.clkdiv4.get_cpu_div() == 0 {
+            2
+        } else {
+            1
+        };
+        self.tick_config.apb = self.tick_config.hclk1 * (u64::from(self.clkdiv4.get_apb_div()) + 1);
+        debug!("{:?}", self.tick_config);
+    }
 }
 
 #[derive(Default)]
@@ -287,18 +331,23 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_APBCLK => { uc.get_data_mut().clk.apbclk.set(0, 32, value) }
         REG_CLKDIV0 => {
             uc.get_data_mut().clk.clkdiv0.set(0, 32, value);
+            uc.get_data_mut().clk.update_tick_config();
         }
         REG_CLKDIV1 => {
             uc.get_data_mut().clk.clkdiv1.set(0, 32, value);
+            uc.get_data_mut().clk.update_tick_config();
         }
         REG_CLKDIV2 => {
             uc.get_data_mut().clk.clkdiv2.set(0, 32, value);
+            uc.get_data_mut().clk.update_tick_config();
         }
         REG_CLKDIV3 => {
             uc.get_data_mut().clk.clkdiv3.set(0, 32, value);
+            uc.get_data_mut().clk.update_tick_config();
         }
         REG_CLKDIV4 => {
             uc.get_data_mut().clk.clkdiv4.set(0, 32, value);
+            uc.get_data_mut().clk.update_tick_config();
         }
         REG_GPAFUN => {
             debug!("GPIOA config 0x{value:08x}");
@@ -322,10 +371,12 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         }
         REG_APLLCON => {
             uc.get_data_mut().clk.apll.set_reg(value);
+            uc.get_data_mut().clk.update_tick_config();
             debug!("Config APLL with {}", uc.get_data().clk.apll);
         }
         REG_UPLLCON => {
             uc.get_data_mut().clk.upll.set_reg(value);
+            uc.get_data_mut().clk.update_tick_config();
             debug!("Config UPLL with {}", uc.get_data().clk.upll);
         }
         _ => {

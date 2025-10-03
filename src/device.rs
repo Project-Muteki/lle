@@ -41,7 +41,7 @@ pub enum StopReason {
 #[derive(Default)]
 pub struct ExtraState {
     pub stop_reason: StopReason,
-    //pub steps: u64,
+    pub steps: u64,
 
     pub store_only: HashMap<u64, u64>,
     pub clk: sys::ClockConfig,
@@ -82,15 +82,14 @@ pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
 /// Stops the emulator when a peripheral needs attention from the device emulator.
 /// Called before the execution of every instruction.
 pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
-    let data = uc.get_data_mut();
-    //data.steps += 1;
+    uc.get_data_mut().steps += 1;
 
     // TODO emulate actual clock behavior
-    //let steps = data.steps;
-    //tmr::generate_stop_condition(uc, steps);
+    let steps = uc.get_data().steps;
+    tmr::generate_stop_condition(uc, steps);
 
     // Collect either the 
-    if !matches!(data.stop_reason, StopReason::Run) {
+    if !matches!(uc.get_data().stop_reason, StopReason::Run) {
         uc.emu_stop().unwrap_or_else(|err| {
             error!("Failed to stop emulator: {err:?}");
         });
