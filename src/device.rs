@@ -26,11 +26,13 @@ impl fmt::Display for QuitDetail {
 
 #[derive(Default, Debug, PartialEq)]
 pub enum StopReason {
+    /// The default state. No reason to stop.
     #[default]
     Run,
+    /// Quitting the emulator. Note that this has higher priority than ticks and will cancel a tick if there is one.
     Quit(QuitDetail),
-    TickDevice,
-    AIC,
+    /// Ticking devices.
+    Tick,
 }
 
 /// Extra emulator states.
@@ -39,7 +41,7 @@ pub enum StopReason {
 #[derive(Default)]
 pub struct ExtraState {
     pub stop_reason: StopReason,
-    pub steps: u64,
+    //pub steps: u64,
 
     pub store_only: HashMap<u64, u64>,
     pub clk: sys::ClockConfig,
@@ -109,6 +111,7 @@ impl Device {
             _ => {}
         }
 
+        aic::tick(uc, self);
         sys::tick(uc, self);
         sic::tick(uc, self);
         gpio::tick(uc, self);

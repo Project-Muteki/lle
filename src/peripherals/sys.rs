@@ -282,7 +282,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_AHBCLK => {
             uc.get_data_mut().clk.ahbclk.set(0, 32, value);
             // AHBCLK may halt the CPU. Request a tick.
-            request_stop(uc, StopReason::TickDevice);
+            request_stop(uc, StopReason::Tick);
         }
         REG_APBCLK => { uc.get_data_mut().clk.apbclk.set(0, 32, value) }
         REG_CLKDIV0 => {

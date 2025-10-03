@@ -1,5 +1,5 @@
 use log::{error, trace, warn};
-use crate::{device::{Device, StopReason, UnicornContext, request_stop}, log_unsupported_read, log_unsupported_write};
+use crate::{device::{Device, StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
 
 pub const BASE: u64 = 0xB8000000;
 pub const SIZE: usize = 0x1000;
@@ -44,11 +44,14 @@ pub struct AICConfig {
     pub levels: [u32; 8],
     /// An index bitmap of each priority. Bit 1 means there are pending interrupts of this priority.
     pub status_map: u8,
+    /// Interrupt state has changed since the last interrupt raise.
+    pub step: bool,
     /// Status bitmap for each priority.
     pub status: [u32; 8],
     /// Interrupt mask bitmap (0 - masked, 1 - unmasked).
     pub enabled: u32,
-    pub current_interrupt: u32,
+    pub current_prio: u8,
+    pub current_interrupt: (u8, u8),
 }
 
 impl Default for AICConfig {
@@ -56,9 +59,11 @@ impl Default for AICConfig {
         Self {
             levels: [0x47474747; 8],
             status_map: Default::default(),
+            step: Default::default(),
             status: Default::default(),
             enabled: Default::default(),
-            current_interrupt: Default::default()
+            current_prio: Default::default(),
+            current_interrupt: Default::default(),
         }
     }
 }
@@ -204,6 +209,14 @@ impl AICConfig {
 
         (next_pending_prio, num)
     }
+
+    pub fn pop_next_interrupt(&mut self) -> (u8, u8) {
+        let (prio, num) = self.next_interrupt();
+        self.current_interrupt = (prio, num);
+        let status = self.status[usize::from(prio)];
+        self.status[usize::from(prio)] = status & !(1 << num);
+        (prio, num)
+    }
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -221,10 +234,13 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 
             uc.get_data().aic.levels[usize::try_from(addr / 4).unwrap()].into()
         }
-        REG_AIC_IPER => u64::from(uc.get_data().aic.current_interrupt) << 2,
-        REG_AIC_ISNR => uc.get_data().aic.current_interrupt.into(),
+        REG_AIC_IPER => u64::from(uc.get_data().aic.current_interrupt.1) << 2,
+        REG_AIC_ISNR => uc.get_data().aic.current_interrupt.1.into(),
         REG_AIC_IMR => uc.get_data().aic.enabled.into(),
-        REG_AIC_ISR => uc.get_data().aic.get_joint_status().into(),
+        REG_AIC_ISR => {
+            uc.get_data_mut().aic.step = false;
+            uc.get_data().aic.get_joint_status().into()
+        }
         _ => {
             log_unsupported_read!(addr, size);
             0
@@ -250,7 +266,8 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_AIC_ISR => {
             uc.get_data_mut().aic.set_joint_status(v32);
             if v32 != 0 {
-                request_stop(uc, StopReason::AIC);
+                uc.get_data_mut().aic.step = true;
+                request_stop(uc, StopReason::Tick);
             }
         }
         REG_AIC_MECR => uc.get_data_mut().aic.apply_enable_mask(v32),
@@ -258,7 +275,8 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_AIC_SSCR => {
             uc.get_data_mut().aic.apply_status_set_mask(v32);
             if v32 != 0 {
-                request_stop(uc, StopReason::AIC);
+                uc.get_data_mut().aic.step = true;
+                request_stop(uc, StopReason::Tick);
             }
         }
         REG_AIC_SCCR => {
@@ -267,8 +285,9 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         }
         REG_AIC_EOSCR => {
             // Request stop so aic::tick() can dispatch the next interrupt.
-            if value == 1 && uc.get_data().aic.get_joint_status() != 0 {
-                request_stop(uc, StopReason::AIC);
+            if uc.get_data().aic.get_joint_status() != 0 {
+                uc.get_data_mut().aic.step = true;
+                request_stop(uc, StopReason::Tick);
             }
         }
         _ => log_unsupported_write!(addr, size, value),
@@ -277,10 +296,14 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 }
 
 pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
-    if uc.get_data().aic.status_map != 0 {
-        let (prio, num) = uc.get_data().aic.next_interrupt();
-        uc.get_data_mut().aic.current_interrupt = num.into();
-
+    if uc.get_data().aic.step && uc.get_data().aic.status_map != 0 {
+        let (prio, _) = uc.get_data_mut().aic.pop_next_interrupt();
+        exception::call_exception_handler(uc, match prio {
+            0 => exception::ExceptionType::FIQ,
+            _ => exception::ExceptionType::IRQ,
+        }).unwrap_or_else(|err| {
+            error!("Failed to invoke exception handler: {err:?}.");
+        });
     }
 }
 
@@ -290,6 +313,7 @@ pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
 #[inline]
 pub fn post_interrupt(uc: &mut UnicornContext, intno: InterruptNumber, incoming: bool, latched: bool) {
     if uc.get_data_mut().aic.check_interrupt(intno, incoming, latched) {
-        request_stop(uc, StopReason::AIC);
+        uc.get_data_mut().aic.step = true;
+        request_stop(uc, StopReason::Tick);
     }
 }

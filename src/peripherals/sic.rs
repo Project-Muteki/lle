@@ -260,7 +260,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             }
             _ => log_unsupported_write!(addr, size, value),
         };
-        request_stop(uc, StopReason::TickDevice);
+        request_stop(uc, StopReason::Tick);
         return;
     }
     if size != 4 {
@@ -294,7 +294,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_SDBLEN => sic.sd_io_size = (value + 1) & 0xffffffff,
         _ => log_unsupported_write!(addr, size, value),
     }
-    request_stop(uc, StopReason::TickDevice);
+    request_stop(uc, StopReason::Tick);
 }
 
 pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
