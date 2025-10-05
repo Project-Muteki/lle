@@ -1,4 +1,3 @@
-
 use std::io::{Read, Seek, SeekFrom};
 use std::{fmt::Display};
 use std::fs;
@@ -366,10 +365,6 @@ pub struct SD {
 }
 
 impl SD {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
     pub fn mount(&mut self, path: &str) -> Result<(), RuntimeError> {
         if self.image_file.is_some() {
             return Err(RuntimeError::SDAlreadyMounted)

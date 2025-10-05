@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
-use log::{info, warn, debug};
+use log::{warn, debug};
 
 use crate::{log_unsupported_read, log_unsupported_write};
 use crate::device::{Device, QuitDetail, StopReason, UnicornContext, request_stop};

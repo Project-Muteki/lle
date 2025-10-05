@@ -1,6 +1,6 @@
 use std::mem;
 
-use bit_field::{B1, B2, B3, B6, bitfield};
+use bit_field::{B2, B3, B6, bitfield};
 use log::{info, warn};
 
 use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};

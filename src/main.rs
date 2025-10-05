@@ -133,6 +133,11 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     // VBAT comparator input
     uc.get_data_mut().gpio.ports[0].data_in.set_p3(true);
 
+    // PCB Version (3)
+    // TODO: Visually they look unconnected but actually measure these with a multimeter.
+    uc.get_data_mut().gpio.ports[0].data_in.set_p0(true);
+    uc.get_data_mut().gpio.ports[0].data_in.set_p7(true);
+
     // UPLL (192MHz)
     uc.get_data_mut().clk.apll.set_reg(0x0001c02e);
     uc.get_data_mut().clk.upll.set_reg(0x0000447e);

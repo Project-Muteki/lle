@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{collections::HashMap, mem};
 
-use log::{debug, error, info};
+use log::{error, info};
 use unicorn_engine::Unicorn;
 
 use crate::{extdev::sd::SD, peripherals::{aic, gpio, rtc, sic, sys, tmr, uart}};

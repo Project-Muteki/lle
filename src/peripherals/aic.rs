@@ -50,7 +50,6 @@ pub struct AICConfig {
     pub status: [u32; 8],
     /// Interrupt mask bitmap (0 - masked, 1 - unmasked).
     pub enabled: u32,
-    pub current_prio: u8,
     pub current_interrupt: (u8, u8),
 }
 
@@ -62,7 +61,6 @@ impl Default for AICConfig {
             step: Default::default(),
             status: Default::default(),
             enabled: Default::default(),
-            current_prio: Default::default(),
             current_interrupt: Default::default(),
         }
     }

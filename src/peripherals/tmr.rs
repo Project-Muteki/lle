@@ -1,4 +1,4 @@
-use bit_field::{B1, B2, B8, bitfield};
+use bit_field::{B2, B8, bitfield};
 use log::warn;
 use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 

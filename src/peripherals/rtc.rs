@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use bit_field::{B1, B4, B8, B12, bitfield};
+use bit_field::{B4, B8, B12, bitfield};
 use log::{debug, error, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
