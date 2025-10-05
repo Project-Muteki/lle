@@ -1,6 +1,6 @@
-use bit_field::{B1, B2, B7, B8, bitfield};
+use bit_field::{B1, B2, B8, bitfield};
 use log::warn;
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::{aic::{InterruptNumber, post_interrupt}, sys::F_BASE}};
+use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 
 pub const BASE: u64 = 0xB8002000;
 pub const SIZE: usize = 0x1000;
