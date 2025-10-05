@@ -4,7 +4,7 @@ use std::{collections::HashMap, mem};
 use log::{error, info};
 use unicorn_engine::Unicorn;
 
-use crate::{extdev::sd::SD, peripherals::{aic, gpio, rtc, sic, sys, tmr, uart}};
+use crate::{extdev::sd::SD, peripherals::{adc, aic, gpio, rtc, sic, sys, tmr, uart}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -51,6 +51,7 @@ pub struct ExtraState {
     pub rtc: rtc::RTCConfig,
     pub tmr: tmr::TimerConfig,
     pub aic: aic::AICConfig,
+    pub adc: adc::ADCConfig,
 }
 
 /// Peripheral device emulation context.

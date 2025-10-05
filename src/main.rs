@@ -34,6 +34,7 @@ use peripherals::{sic, sys, gpio};
 
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
+use crate::peripherals::adc;
 use crate::peripherals::aic;
 use crate::peripherals::common::mmio_set_store_only;
 use crate::peripherals::rtc;
@@ -143,6 +144,8 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     uc.get_data_mut().clk.upll.set_reg(0x0000447e);
     uc.get_data_mut().clk.update_tick_config();
 
+    // TODO: Move this to its own device with ticks and stuff (or at least it should be handled by ADC).
+    uc.get_data_mut().adc.xdata = 1023;
     // TODO: Set other initial states
 
     info!("bootrom_hle: BootROM stage done.");
@@ -171,6 +174,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.mmio_map(uart::BASE, uart::SIZE, Some(uart::read), Some(uart::write))?;
     uc.mmio_map(tmr::BASE, tmr::SIZE, Some(tmr::read), Some(tmr::write))?;
     uc.mmio_map(aic::BASE, aic::SIZE, Some(aic::read), Some(aic::write))?;
+    uc.mmio_map(adc::BASE, adc::SIZE, Some(adc::read), Some(adc::write))?;
 
     // Memory
     // SDRAM (32MiB)

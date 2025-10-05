@@ -1,5 +1,6 @@
 pub mod common;
 
+pub mod adc;
 pub mod aic;
 pub mod gpio;
 pub mod rtc;
