@@ -33,8 +33,8 @@ pub struct UARTPort {
 impl Default for UARTPort {
     fn default() -> Self {
         let mut fifo_status = UARTFIFOStatus::new();
-        fifo_status.set_rx_empty(1);
-        fifo_status.set_tx_empty(1);
+        fifo_status.set_rx_empty(true);
+        fifo_status.set_tx_empty(true);
         Self { fifo_status, line_buffer: [0u8; 80], line_offset: 0 }
     }
 }
@@ -42,23 +42,23 @@ impl Default for UARTPort {
 #[bitfield]
 #[derive(Default)]
 pub struct UARTFIFOStatus {
-    rx_overflow: B1,
+    rx_overflow: bool,
     reserved_1: B3,
-    parity_error: B1,
-    framing_error: B1,
-    break_int: B1,
-    rx_err: B1,
+    parity_error: bool,
+    framing_error: bool,
+    break_int: bool,
+    rx_err: bool,
     rx_pointer: B6,
-    rx_empty: B1,
-    rx_full: B1,
+    rx_empty: bool,
+    rx_full: bool,
     tx_pointer: B6,
-    tx_empty: B1,
-    tx_full: B1,
-    tx_overflow: B1,
+    tx_empty: bool,
+    tx_full: bool,
+    tx_overflow: bool,
     reserved_26: B3,
-    te_flag: B1,
+    te_flag: bool,
     reserved_29: B2,
-    tx_err: B1,
+    tx_err: bool,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {

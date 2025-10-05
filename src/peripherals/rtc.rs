@@ -31,11 +31,11 @@ pub struct RTCConfig {
 
 #[bitfield]
 pub struct PowerControl {
-    power_on: B1,
-    power_off: B1,
-    power_off_delay_enable: B1,
+    power_on: bool,
+    power_off: bool,
+    power_off_delay_enable: bool,
     reserved_3: B4,
-    power_key: B1,
+    power_key: bool,
     status: B8,
     power_off_delay_sec: B4,
     reserved_20: B12,
@@ -44,7 +44,7 @@ pub struct PowerControl {
 impl Default for PowerControl {
     fn default() -> Self {
         let mut result = Self::new();
-        result.set_power_on(1);
+        result.set_power_on(true);
         result
     }
 }
@@ -173,7 +173,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         REG_PWRON => {
             let power_control = &mut uc.get_data_mut().rtc.power_control;
             power_control.set(0, 32, value);
-            if power_control.get_power_on() == 0 || power_control.get_power_off() == 1 {
+            if !power_control.get_power_on() || power_control.get_power_off() {
                 debug!("RTC power off requested.");
             }
         }

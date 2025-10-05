@@ -38,65 +38,65 @@ pub const F_BASE_RTC: u64 = 32_000;
 #[bitfield]
 #[derive(Default)]
 pub struct AHBCLKRegister {
-    cpu: B1,
-    apbclk: B1,
-    hclk: B1,
-    sram: B1,
-    dram: B1,
-    blt: B1,
-    fsc: B1,
-    jpg: B1,
+    cpu: bool,
+    apbclk: bool,
+    hclk: bool,
+    sram: bool,
+    dram: bool,
+    blt: bool,
+    fsc: bool,
+    jpg: bool,
 
-    hclk1: B1,
-    ebi: B1,
-    edma0: B1,
-    edma1: B1,
-    edma2: B1,
-    edma3: B1,
-    edma4: B1,
-    des: B1,
+    hclk1: bool,
+    ebi: bool,
+    edma0: bool,
+    edma1: bool,
+    edma2: bool,
+    edma3: bool,
+    edma4: bool,
+    des: bool,
 
-    hclk3: B1,
-    usbh: B1,
-    usbd: B1,
-    ge4p: B1,
-    gpu: B1,
-    sic: B1,
-    nand: B1,
-    sd: B1,
+    hclk3: bool,
+    usbh: bool,
+    usbd: bool,
+    ge4p: bool,
+    gpu: bool,
+    sic: bool,
+    nand: bool,
+    sd: bool,
 
-    hclk4: B1,
-    spu: B1,
-    i2s: B1,
-    vpost: B1,
-    cap: B1,
-    sen: B1,
-    ado: B1,
-    _reserved_b31: B1,
+    hclk4: bool,
+    spu: bool,
+    i2s: bool,
+    vpost: bool,
+    cap: bool,
+    sen: bool,
+    ado: bool,
+    reserved_31: B1,
 }
 
 #[bitfield]
 #[derive(Default)]
 pub struct APBCLKRegister {
-    adc: B1,
-    i2c: B1,
-    rtc: B1,
-    uart0: B1,
-    uart1: B1,
-    pwm: B1,
-    spims0: B1,
-    spims1: B1,
+    adc: bool,
+    i2c: bool,
+    rtc: bool,
+    uart0: bool,
+    uart1: bool,
+    pwm: bool,
+    spims0: bool,
+    spims1: bool,
 
-    tmr0: B1,
-    tmr1: B1,
-    _reserved_b10_14: B5,
-    wdclk: B1,
+    tmr0: bool,
+    tmr1: bool,
+    reserved_10: B5,
+    wdclk: bool,
 
-    _reserved_b16_23: B8,
+    reserved_16: B8,
 
-    tic: B1,
-    kpi: B1,
-    _reserved_b26_31: B6,
+    tic: bool,
+    kpi: bool,
+    reserved_26: B6,
 }
 
 #[bitfield]
@@ -387,7 +387,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 }
 
 pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
-    if uc.get_data().clk.ahbclk.get_cpu() == 0 {
+    if !uc.get_data().clk.ahbclk.get_cpu() {
         uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::CPUHalt);
     }
 }

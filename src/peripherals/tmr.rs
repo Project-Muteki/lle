@@ -17,13 +17,13 @@ const REG_WTCR: u64 = 0x1c;
 #[bitfield]
 #[derive(Default)]
 pub struct WatchdogControl {
-    alive: B1,
-    auto_reset_enabled: B1,
-    reset_flag: B1,
-    irq_enabled: B1,
+    alive: bool,
+    auto_reset_enabled: bool,
+    reset_flag: bool,
+    irq_enabled: bool,
     interval: B2,
-    irq_handler_installed: B1,
-    enabled: B1,
+    irq_handler_installed: bool,
+    enabled: bool,
 }
 
 #[bitfield]
@@ -41,14 +41,14 @@ pub enum TimerMode {
 pub struct TimerControl {
     prescale: B8,
     reserved_8: B8,
-    tdr_en: B1,
+    tdr_en: bool,
     reserved_17: B8,
-    is_active: B1,
-    reset: B1,
+    is_active: bool,
+    reset: bool,
     mode: TimerMode,
-    irq_enable: B1,
-    enable: B1,
-    dbgack_en: B1,
+    irq_enable: bool,
+    enable: bool,
+    dbgack_en: bool,
 }
 
 
@@ -69,14 +69,14 @@ pub struct TimerConfig {
 
 impl TimerChannel {
     pub fn check_irq_condition(&mut self) -> bool {
-        if self.control.get_enable() == 0 {
+        if !self.control.get_enable() {
             return false;
         }
 
         if self.count == self.compare {
             let mut rv = true;
             match self.control.get_mode() {
-                TimerMode::OneShot => self.control.set_enable(0),
+                TimerMode::OneShot => self.control.set_enable(false),
                 TimerMode::Periodic => self.count = 0,
                 TimerMode::Toggle => {
                     self.count = 0;
@@ -94,8 +94,8 @@ impl TimerChannel {
     }
 
     pub fn reset(&mut self) {
-        self.control.set_reset(0);
-        self.control.set_enable(0);
+        self.control.set_reset(false);
+        self.control.set_enable(false);
         self.count = 0;
         self.level = false;
     }
@@ -132,13 +132,13 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     match addr {
         REG_TCSR0 => {
             uc.get_data_mut().tmr.channels[0].control.set(0, 32, value);
-            if uc.get_data().tmr.channels[0].control.get_reset() == 1 {
+            if uc.get_data().tmr.channels[0].control.get_reset() {
                 uc.get_data_mut().tmr.channels[0].reset();
             }
         }
         REG_TCSR1 => {
             uc.get_data_mut().tmr.channels[1].control.set(0, 32, value);
-            if uc.get_data().tmr.channels[1].control.get_reset() == 1 {
+            if uc.get_data().tmr.channels[1].control.get_reset() {
                 uc.get_data_mut().tmr.channels[1].reset();
             }
         }
@@ -162,7 +162,7 @@ pub fn generate_stop_condition(uc: &mut UnicornContext, steps: u64) {
     }
 
     for timer in &mut uc.get_data_mut().tmr.channels {
-        if timer.control.get_enable() == 0 {
+        if !timer.control.get_enable() {
             continue;
         }
         let rate = div_apb * (u64::from(timer.control.get_prescale()) + 1);

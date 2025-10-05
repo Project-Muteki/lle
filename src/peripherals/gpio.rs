@@ -24,22 +24,22 @@ const REG_IRQTGSRC2: u64 = 0xf8;
 #[bitfield]
 #[derive(Default)]
 pub struct GPIOFlags {
-    p0: B1,
-    p1: B1,
-    p2: B1,
-    p3: B1,
-    p4: B1,
-    p5: B1,
-    p6: B1,
-    p7: B1,
-    p8: B1,
-    p9: B1,
-    p10: B1,
-    p11: B1,
-    p12: B1,
-    p13: B1,
-    p14: B1,
-    p15: B1,
+    p0: bool,
+    p1: bool,
+    p2: bool,
+    p3: bool,
+    p4: bool,
+    p5: bool,
+    p6: bool,
+    p7: bool,
+    p8: bool,
+    p9: bool,
+    p10: bool,
+    p11: bool,
+    p12: bool,
+    p13: bool,
+    p14: bool,
+    p15: bool,
 }
 
 #[bitfield]
@@ -66,20 +66,20 @@ pub struct GPIOIRQSource {
 #[bitfield]
 #[derive(Default)]
 pub struct GPIODebounce {
-    src_irq0: B1,
-    src_irq1: B1,
-    src_irq2: B1,
-    src_irq3: B1,
+    src_irq0: bool,
+    src_irq1: bool,
+    src_irq2: bool,
+    src_irq3: bool,
     delay_power_of_2: B4,
 }
 
 #[bitfield]
 #[derive(Default)]
 pub struct GPIOIRQLatchSource {
-    irq0: B1,
-    irq1: B1,
-    irq2: B1,
-    irq3: B1,
+    irq0: bool,
+    irq1: bool,
+    irq2: bool,
+    irq3: bool,
     _reserved: B4,
 }
 

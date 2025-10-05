@@ -115,78 +115,37 @@ pub struct ResponseType7 {
     pub check: u8,
 }
 
-impl Into<(u32, u32)> for ResponseType1 {
-    fn into(self) -> (u32, u32) {
-        let reg0 = ((u32::from(self.cmd) & 0b111111) << 24) | (self.status.get(8, 24) as u32);
-        let reg1 = self.status.get(0, 8) as u32;
-        (reg0, reg1)
-    }
-}
-
-impl Into<(u32, u32)> for ResponseType2 {
-    fn into(self) -> (u32, u32) {
-        // TODO The BSP seems to ignore these. Do we need to put anything here?
-        (0, 0)
-    }
-}
-
-impl Into<(u32, u32)> for ResponseType3 {
-    fn into(self) -> (u32, u32) {
-        let reg0 = (0b00111111 << 24) | (u32::from(self.power_up) << 23) | (u32::from(self.is_sdhc) << 22) | (self.ocr >> 8);
-        (reg0, self.ocr & 0xff)
-    }
-}
-
-impl Into<(u32, u32)> for ResponseType6 {
-    fn into(self) -> (u32, u32) {
-        let short_status = (
-            (self.status.get(22, 2) << 14) |
-            (u64::from(self.status.get_bit(19)) << 13) |
-            self.status.get(0, 13)
-        ) as u32;
-        let reg0 = (0b00000011u32 << 24) | u32::from(self.rca) << 8 | ((short_status & 0xff00) >> 8);
-        (reg0, short_status & 0xff)
-    }
-}
-
-impl Into<(u32, u32)> for ResponseType7 {
-    fn into(self) -> (u32, u32) {
-        let reg0 = (0b00001000u32 << 24) | u32::from(self.voltage_accepted);
-        (reg0, self.check.into())
-    }
-}
-
 #[bitfield]
 #[derive(Default, Copy, Clone)]
 pub struct CardStatus {
     test: B2,  // 0..=1
-    app_specific: B1,  // 2
-    ake_seq_error: B1,  // 3
-    reserved_sdio: B1,  // 4
-    app_command: B1,  // 5
-    function_event: B1,  // 6
+    app_specific: bool,  // 2
+    ake_seq_error: bool,  // 3
+    reserved_sdio: bool,  // 4
+    app_command: bool,  // 5
+    function_event: bool,  // 6
     reserved_7: B1,  // 7
-    ready_for_data: B1,  // 8
+    ready_for_data: bool,  // 8
     current_state: CurrentState,  // 9..=12
-    erased_reset: B1,  // 13
-    card_ecc_disabled: B1,  // 14
-    wp_erase_skip: B1,  // 15
-    csd_overwrite: B1,  // 16
-    reserved_deferred_response: B1,  // 17
+    erased_reset: bool,  // 13
+    card_ecc_disabled: bool,  // 14
+    wp_erase_skip: bool,  // 15
+    csd_overwrite: bool,  // 16
+    reserved_deferred_response: bool,  // 17
     reserved_18: B1,  // 18
-    general_error: B1,  // 19
-    controller_error: B1,  // 20
-    card_ecc_failed: B1,  // 21
-    illegal_command: B1,  // 22
-    command_crc_error: B1,  // 23
-    lock_unlock_failed: B1,  // 24
-    card_is_locked: B1,  // 25
-    wp_violation: B1,  // 26
-    erase_param: B1,  // 27
-    erase_seq_error: B1,  // 28
-    block_len_error: B1,  // 29
-    address_error: B1,  // 30
-    out_of_range: B1,  // 31
+    general_error: bool,  // 19
+    controller_error: bool,  // 20
+    card_ecc_failed: bool,  // 21
+    illegal_command: bool,  // 22
+    command_crc_error: bool,  // 23
+    lock_unlock_failed: bool,  // 24
+    card_is_locked: bool,  // 25
+    wp_violation: bool,  // 26
+    erase_param: bool,  // 27
+    erase_seq_error: bool,  // 28
+    block_len_error: bool,  // 29
+    address_error: bool,  // 30
+    out_of_range: bool,  // 31
 }
 
 impl CardStatus {
@@ -194,12 +153,12 @@ impl CardStatus {
         // TODO cross-check with table 4-43
         let before_clear = self.clone();
         self.set(26, 6, 0);
-        self.set_lock_unlock_failed(0);
+        self.set_lock_unlock_failed(false);
         self.set(19, 3, 0);
         self.set(15, 2, 0);
-        self.set_erased_reset(0);
-        self.set_app_command(0);
-        self.set_ake_seq_error(0);
+        self.set_erased_reset(false);
+        self.set_app_command(false);
+        self.set_ake_seq_error(false);
         before_clear
     }
 }
@@ -227,21 +186,21 @@ pub struct CardSpecificSC {
 
     reserved_8: B2,
     file_format: B2,
-    tmp_write_protect: B1,
-    perm_write_protect: B1,
-    copy: B1,
+    tmp_write_protect: bool,
+    perm_write_protect: bool,
+    copy: bool,
     file_format_grp: B1,
 
     reserved_16: B5,
-    write_bl_partial: B1,
+    write_bl_partial: bool,
     write_bl_len: B4,
     r2w_factor: B3,
 
     reserved_29: B2,
-    wp_grp_enable: B1,
+    wp_grp_enable: bool,
     wp_grp_size: B7,
     sector_size: B7,
-    erase_blk_en: B1,
+    erase_blk_en: bool,
     c_size_mult: B3,
     vdd_w_curr_max: B3,
     vdd_w_curr_min: B3,
@@ -250,10 +209,10 @@ pub struct CardSpecificSC {
     c_size: B12,
 
     reserved_74: B2,
-    dsr_imp: B1,
-    read_blk_misalign: B1,
-    write_blk_misalign: B1,
-    read_bl_partial: B1,
+    dsr_imp: bool,
+    read_blk_misalign: bool,
+    write_blk_misalign: bool,
+    read_bl_partial: bool,
     read_bl_len: B4,
     ccc: B12,
     tran_speed: B8,
@@ -271,13 +230,13 @@ impl Default for CardSpecificSC {
         result.set_tail(1);
         result.set_tran_speed(0x032);  // 25MHz
         result.set_ccc(0x5b5);
-        result.set_read_bl_partial(1);
-        result.set_write_bl_partial(1);
+        result.set_read_bl_partial(true);
+        result.set_write_bl_partial(true);
         result.set_read_bl_len(0xa);  // 1024 bytes
         result.set_write_bl_len(0xa);  // 1024 bytes
         result.set_c_size_mult(0x7);  // 512x
         result.set_r2w_factor(0x2);  // 4x
-        result.set_erase_blk_en(1);
+        result.set_erase_blk_en(true);
         result.set_sector_size(0x7f);  // 64KiB
         result.set_vdd_r_curr_min(0x7);
         result.set_vdd_r_curr_max(0x7);
@@ -295,30 +254,30 @@ pub struct CardSpecificHC {
 
     reserved_8: B2,
     file_format: B2,
-    tmp_write_protect: B1,
-    perm_write_protect: B1,
-    copy: B1,
+    tmp_write_protect: bool,
+    perm_write_protect: bool,
+    copy: bool,
     file_format_grp: B1,
 
     reserved_16: B5,
-    write_bl_partial: B1,
+    write_bl_partial: bool,
     write_bl_len: B4,
     r2w_factor: B3,
 
     reserved_29: B2,
-    wp_grp_enable: B1,
+    wp_grp_enable: bool,
     wp_grp_size: B7,
     sector_size: B7,
-    erase_blk_en: B1,
+    erase_blk_en: bool,
 
     reserved_47: B1,
     c_size: B22,
 
     reserved_70: B6,
-    dsr_imp: B1,
-    read_blk_misalign: B1,
-    write_blk_misalign: B1,
-    read_bl_partial: B1,
+    dsr_imp: bool,
+    read_blk_misalign: bool,
+    write_blk_misalign: bool,
+    read_bl_partial: bool,
     read_bl_len: B4,
     ccc: B12,
     tran_speed: B8,
@@ -340,7 +299,7 @@ impl Default for CardSpecificHC {
         result.set_read_bl_len(0x9);  // 512 bytes
         result.set_write_bl_len(0x9);  // 512 bytes
         result.set_r2w_factor(0x2);  // 4x
-        result.set_erase_blk_en(1);
+        result.set_erase_blk_en(true);
         result.set_sector_size(0x7f);  // 64KiB
         result
     }
@@ -437,7 +396,7 @@ impl SD {
 
     /// Make a request on the CMD channel.
     pub fn make_request(&mut self, cmd: u8, arg: u32) -> Response {
-        if self.card_status.get_app_command() == 1 {
+        if self.card_status.get_app_command() {
             // ACMD
             // TODO
             return match cmd {
@@ -599,11 +558,11 @@ impl SD {
                     self.card_status.after_read();
                     if arg == 0 || arg > 512 {
                         warn!("New IO size of {arg} bytes is out of range 1..=512.");
-                        self.card_status.set_block_len_error(1);
+                        self.card_status.set_block_len_error(true);
                         Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
                     } else {
                         self.io_size = arg;
-                        self.card_status.set_block_len_error(0);
+                        self.card_status.set_block_len_error(false);
                         debug!("IO size (block length) changed to {} bytes.", self.io_size);
                         Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
                     }
@@ -624,7 +583,7 @@ impl SD {
             55 => {
                 trace!("CMD55");
                 self.card_status.after_read();
-                self.card_status.set_app_command(1);
+                self.card_status.set_app_command(true);
                 Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
             }
             _ => {
@@ -734,7 +693,7 @@ impl SD {
     /// Set the `ILLEGAL_COMMAND` status bit and respond with a no response. Should always use with a return.
     #[inline(always)]
     fn term_illegal(&mut self) -> Response {
-        self.card_status.set_illegal_command(1);
+        self.card_status.set_illegal_command(true);
         Response::RNone
     }
 }

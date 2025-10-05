@@ -102,12 +102,9 @@ impl Device {
     ///
     /// This will modify both the device states and the emulator states associated with it.
     pub fn tick(&mut self, uc: &mut UnicornContext) -> bool {
-        match &uc.get_data().stop_reason {
-            StopReason::Quit(reason) => {
-                info!("Quit condition pre-check: {reason}");
-                return false;
-            }
-            _ => {}
+        if let StopReason::Quit(reason) = &uc.get_data().stop_reason {
+            info!("Quit condition pre-check: {reason}");
+            return false;
         }
 
         aic::tick(uc, self);
@@ -118,12 +115,11 @@ impl Device {
         rtc::tick(uc, self);
 
         let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
-        match prev_reason {
-            StopReason::Quit(reason) => {
-                info!("Quit condition post-check: {reason}");
-                false
-            }
-            _ => true
+        if let StopReason::Quit(reason) = prev_reason {
+            info!("Quit condition post-check: {reason}");
+            false
+        } else {
+            true
         }
     }
 }

@@ -109,8 +109,8 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     uc.set_pc(load_addr.into())?;
 
     let config_clk = &mut uc.get_data_mut().clk;
-    config_clk.ahbclk.set_cpu(1);
-    config_clk.ahbclk.set_sram(1);
+    config_clk.ahbclk.set_cpu(true);
+    config_clk.ahbclk.set_sram(true);
 
     // SDRAM stub
     mmio_set_store_only(uc, 0xb0003000, 0x00130456);
@@ -131,7 +131,7 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     mmio_set_store_only(uc, 0xb0003028, 0x094E7425);
 
     // VBAT comparator input
-    uc.get_data_mut().gpio.ports[0].data_in.set_p3(1);
+    uc.get_data_mut().gpio.ports[0].data_in.set_p3(true);
 
     // UPLL (192MHz)
     uc.get_data_mut().clk.apll.set_reg(0x0001c02e);
