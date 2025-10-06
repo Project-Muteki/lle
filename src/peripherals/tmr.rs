@@ -1,8 +1,8 @@
 use bit_field::{B2, B8, bitfield};
 use log::warn;
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 
-pub const BASE: u64 = 0xB8002000;
+pub const BASE: u64 = 0xb8002000;
 pub const SIZE: usize = 0x1000;
 
 const REG_TCSR0: u64 = 0x0;
@@ -149,10 +149,6 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         _ => log_unsupported_write!(addr, size, value),
     }
     
-}
-
-pub fn tick(_uc: &mut UnicornContext, device: &mut Device) {
-
 }
 
 pub fn generate_stop_condition(uc: &mut UnicornContext, steps: u64) {

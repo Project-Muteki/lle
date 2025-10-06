@@ -10,12 +10,17 @@ mod device;
 /// CPU exception handling.
 mod exception;
 
+mod hle;
+
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::os::raw::c_void;
 
+use log::LevelFilter;
+use log::debug;
 use log::info;
 use unicorn_engine::ArmCpuModel;
 use unicorn_engine::HookType;
@@ -159,7 +164,10 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 /// 
 /// This does not populate registers, nor boots from the SD card. These are handled in run_bootrom().
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
-    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, ExtraState::default())?;
+    let data = Box::new(ExtraState {
+        raw_sdram: vec![0u8; 0x2000000], ..Default::default()
+    });
+    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, data)?;
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
     uc.ctl_tlb_type(TlbType::CPU)?;
 
@@ -180,10 +188,28 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.mmio_map(adc::BASE, adc::SIZE, Some(adc::read), Some(adc::write))?;
 
     // Memory
-    // SDRAM (32MiB)
-    uc.mem_map(0x80000000, 0x2000000, Permission::ALL)?;
+    // SDRAM (32MiB) (Mapped at 0x80000000, mirrored to 0x00000000)
+    let sdram_size = uc.get_data().raw_sdram.len();
+    unsafe {
+        let sdram_ptr = uc.get_data_mut().raw_sdram.as_mut_ptr() as *mut c_void;
+        uc.mem_map_ptr(0x00000000, sdram_size, Permission::ALL, sdram_ptr)?;
+        uc.mem_map_ptr(0x80000000, sdram_size, Permission::ALL, sdram_ptr)?;
+    }
+
     // SRAM (8KiB)
     uc.mem_map(0xff000000, 0x2000, Permission::ALL)?;
+
+    // HLE callbacks
+    // TODO: make these configurable and optional.
+    uc.add_block_hook(0x800053e0, 0x800053e0, hle::printf_callback)?;
+
+    if log::max_level() >= LevelFilter::Debug {
+        debug!("Memory map:");
+        let mem_regions = uc.mem_regions()?;
+        for region in mem_regions {
+            debug!("0x{:08x} - 0x{:08x} {:?}", region.begin, region.end, region.perms);
+        }
+    }
 
     Ok(uc)
 }

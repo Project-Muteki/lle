@@ -1,7 +1,7 @@
-use log::{debug, error, trace, warn};
+use log::{error, trace, warn};
 use crate::{device::{Device, StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
 
-pub const BASE: u64 = 0xB8000000;
+pub const BASE: u64 = 0xb8000000;
 pub const SIZE: usize = 0x1000;
 
 const REG_AIC_SCR_START: u64 = 0x0;
@@ -249,6 +249,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
         log_unsupported_write!(addr, size, value);
+        return;
     }
 
     let v32 = u32::try_from(value & 0xffffffff).unwrap();

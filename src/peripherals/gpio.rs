@@ -1,9 +1,9 @@
 use log::warn;
 use bit_field::{B2, B4, bitfield};
 
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};
 
-pub const BASE: u64 = 0xB8001000;
+pub const BASE: u64 = 0xb8001000;
 pub const SIZE: usize = 0x1000;
 
 const REG_GPIO_BLOCK_START: u64 = 0x0;
@@ -160,6 +160,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
         log_unsupported_write!(addr, size, value);
+        return;
     }
 
     match addr {
@@ -207,8 +208,4 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             log_unsupported_write!(addr, size, value);
         }
     }
-}
-
-pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
-
 }

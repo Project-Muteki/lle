@@ -1,8 +1,8 @@
 use bit_field::{B1, B7, B8, bitfield};
 use log::warn;
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};
 
-pub const BASE: u64 = 0xB800E000;
+pub const BASE: u64 = 0xb800e000;
 pub const SIZE: usize = 0x1000;
 
 const ADC_CON: u64 = 0x0;
@@ -91,6 +91,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
         log_unsupported_write!(addr, size, value);
+        return;
     }
 
     let adc = &mut uc.get_data_mut().adc;
@@ -101,8 +102,4 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             log_unsupported_write!(addr, size, value);
         }
     }
-}
-
-pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
-
 }

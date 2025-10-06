@@ -4,9 +4,9 @@ use bit_field::{B4, B8, B12, bitfield};
 use log::{debug, error, trace, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
 
-pub const BASE: u64 = 0xB8003000;
+pub const BASE: u64 = 0xb8003000;
 pub const SIZE: usize = 0x1000;
 
 const REG_INIR: u64 = 0x0;
@@ -192,8 +192,4 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 
     //uc.get_data_mut().rtc.write_enabled = false;
-}
-
-pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
-
 }

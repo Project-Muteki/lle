@@ -3,9 +3,9 @@ use std::mem;
 use bit_field::{B2, B3, B6, bitfield};
 use log::{info, warn};
 
-use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};
 
-pub const BASE: u64 = 0xB8008000;
+pub const BASE: u64 = 0xb8008000;
 pub const SIZE: usize = 0x1000;
 
 pub const REG_UART_DATA: u64 = 0x0;
@@ -111,8 +111,4 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         },
         _ => log_unsupported_write!(addr, size, value),
     }
-}
-
-pub fn tick(_uc: &mut UnicornContext, _device: &mut Device) {
-
 }

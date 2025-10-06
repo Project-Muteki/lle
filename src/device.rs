@@ -12,6 +12,7 @@ pub enum QuitDetail {
     UserSpecified,
     CPUException,
     CPUHalt,
+    HLECallbackFailure,
 }
 
 impl fmt::Display for QuitDetail {
@@ -20,6 +21,7 @@ impl fmt::Display for QuitDetail {
             Self::UserSpecified => { write!(f, "Stopping emulator...") }
             Self::CPUException => { write!(f, "CPU exception occurred and user asked us to quit on this type of exception.") }
             Self::CPUHalt => { write!(f, "CPU halted.") }
+            Self::HLECallbackFailure => { write!(f, "HLE callback failed to execute.") }
         }
     }
 }
@@ -40,6 +42,7 @@ pub enum StopReason {
 /// Mostly contains the MMIO registers, but also some target-specific states (like stop reasons).
 #[derive(Default)]
 pub struct ExtraState {
+    pub raw_sdram: Vec<u8>,
     pub stop_reason: StopReason,
     pub steps: u64,
 
@@ -64,7 +67,7 @@ pub struct Device {
     pub external_sd: SD,
 }
 
-pub type UnicornContext<'a> = Unicorn<'a, ExtraState>;
+pub type UnicornContext<'a> = Unicorn<'a, Box<ExtraState>>;
 
 /// Defer a stop to right before the next instruction executes, stating the specified reason.
 pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
@@ -111,9 +114,6 @@ impl Device {
         aic::tick(uc, self);
         sys::tick(uc, self);
         sic::tick(uc, self);
-        gpio::tick(uc, self);
-        uart::tick(uc, self);
-        rtc::tick(uc, self);
 
         let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
         if let StopReason::Quit(reason) = prev_reason {

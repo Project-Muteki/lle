@@ -1,7 +1,7 @@
 use log::{trace, warn};
 use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
 
-pub const BASE: u64 = 0xB0003000;
+pub const BASE: u64 = 0xb0003000;
 pub const SIZE: usize = 0x1000;
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {

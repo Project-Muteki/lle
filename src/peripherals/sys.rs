@@ -7,7 +7,7 @@ use crate::{log_unsupported_read, log_unsupported_write};
 use crate::device::{Device, QuitDetail, StopReason, UnicornContext, request_stop};
 use crate::peripherals::common::{mmio_get_store_only, mmio_set_store_only};
 
-pub const BASE: u64 = 0xB0000000;
+pub const BASE: u64 = 0xb0000000;
 pub const SIZE: usize = 0x1000;
 
 const REG_CHIPID: u64 = 0x0;
@@ -320,6 +320,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
 pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     if size != 4 {
         log_unsupported_write!(addr, size, value);
+        return;
     }
 
     match addr {

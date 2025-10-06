@@ -9,7 +9,7 @@ use crate::{log_unsupported_read, log_unsupported_write};
 pub const NAME_DMAC: &str = "DMAC";
 pub const NAME_FMI: &str = "FMI";
 pub const NAME_SD: &str = "SD";
-pub const BASE: u64 = 0xB1006000;
+pub const BASE: u64 = 0xb1006000;
 pub const SIZE: usize = 0x1000;
 
 pub const BASE_DMAC: u64 = 0x0;
