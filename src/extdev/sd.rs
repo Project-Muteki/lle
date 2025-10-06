@@ -389,15 +389,23 @@ impl SD {
         self.csd = None;
     }
 
+    pub fn is_mounted(&self) -> bool {
+        self.image_file.is_some()
+    }
+
     /// Make a request on the CMD channel.
     pub fn make_request(&mut self, cmd: u8, arg: u32) -> Response {
+        if !self.is_mounted() {
+            return Response::RNone;
+        }
         if self.card_status.get_app_command() {
             // ACMD
             // TODO
+            trace!("ACMD{cmd} arg=0x{arg:08x}");
             return match cmd {
                 6 => {
                     if self.card_status.get_current_state() == CurrentState::Transfer {
-                        debug!("ACMD6 arg=0x{arg:08x}");
+                        debug!("arg=0x{arg:08x}");
                         let status = self.card_status.after_read();
                         Response::R1(ResponseType1 { cmd, status, busy: false })
                     } else {
@@ -411,11 +419,11 @@ impl SD {
                             None => false,
                         };
                         if arg & 0x00ffffff == 0 {
-                            debug!("ACMD41 query");
+                            debug!("query");
                             self.card_status.after_read();
                             Response::R3(ResponseType3 { ocr: 0x00ffff00, is_sdhc, power_up: false })
                         } else {
-                            debug!("ACMD41 set arg=0x{arg:08x}");
+                            debug!("set arg=0x{arg:08x}");
                             self.card_status.set_current_state(CurrentState::Ready);
                             self.card_status.after_read();
                             Response::R3(ResponseType3 { ocr: arg & 0x00ffffff, is_sdhc, power_up: true })
@@ -427,7 +435,6 @@ impl SD {
                 }
                 51 => {
                     if self.card_status.get_current_state() == CurrentState::Transfer {
-                        debug!("ACMD51");
                         self.recv_action = RecvAction::SCRRead;
                         self.card_status.set_current_state(CurrentState::SendingData);
                         let status = self.card_status.after_read();
@@ -442,13 +449,14 @@ impl SD {
                 },
             };
         }
+        trace!("CMD{cmd} arg=0x{arg:08x}");
         match cmd {
             0 => {
                 self.card_status.set(0, 32, 0u64);
                 self.rca = 0;
                 Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })
             }
-            2 | 10 => {
+            2 => {
                 if self.card_status.get_current_state() == CurrentState::Ready {
                     self.card_status.set_current_state(CurrentState::Identification);
                     Response::R2(ResponseType2 { cid_csd: CID_ESD.clone() })
@@ -470,7 +478,6 @@ impl SD {
             6 => {
                 // See 4.3.10
                 if self.card_status.get_current_state() == CurrentState::Transfer {
-                    trace!("CMD6");
                     self.recv_action = RecvAction::FunctionStatus{arg};
                     self.card_status.set_current_state(CurrentState::SendingData);
                     let status = self.card_status.after_read();
@@ -485,7 +492,7 @@ impl SD {
                     CurrentState::StandBy => {
                         if rca == self.rca {
                             // StandBy -> Transfer when addressed.
-                            trace!("CMD7 select RCA={}", self.rca);
+                            trace!("select RCA={}", self.rca);
                             self.card_status.set_current_state(CurrentState::Transfer);
                         }
                         // StandBy -> StandBy when NOT addressed.
@@ -495,7 +502,7 @@ impl SD {
                     CurrentState::Transfer | CurrentState::SendingData => {
                         if rca != self.rca {
                             // {Transfer, SendingData} -> StandBy when NOT addressed.
-                            trace!("CMD7 deselect RCA={}", self.rca);
+                            trace!("deselect RCA={}", self.rca);
                             self.card_status.set_current_state(CurrentState::StandBy);
                             let status = self.card_status.after_read();
                             Response::R1(ResponseType1 { cmd, status, busy: false })
@@ -531,6 +538,18 @@ impl SD {
                     }
                 } else {
                     self.term_illegal()
+                }
+            }
+            10 => {
+                if self.rca == u16::try_from((arg >> 16) & 0xffff).unwrap() {
+                    if self.card_status.get_current_state() == CurrentState::StandBy {
+                        Response::R2(ResponseType2 { cid_csd: CID_ESD.clone() })
+                    } else {
+                        self.term_illegal()
+                    }
+                } else {
+                    warn!("RCA does not match, ignoring request.");
+                    Response::RNone
                 }
             }
             12 => {
@@ -576,7 +595,6 @@ impl SD {
                 }
             }
             55 => {
-                trace!("CMD55");
                 self.card_status.after_read();
                 self.card_status.set_app_command(true);
                 Response::R1(ResponseType1 { cmd, status: self.card_status, busy: false })

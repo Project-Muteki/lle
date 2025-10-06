@@ -327,6 +327,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         match sd_device_op {
             Some(sd_device) => {
                 let sic_mut = &mut uc.get_data_mut().sic;
+                sic_mut.sd_irq.set_card_detect(!sd_device.is_mounted());
                 match sd_device.make_request(cmd, arg) {
                     // TODO: Maybe make this a trait
                     Response::R1(resp) => {

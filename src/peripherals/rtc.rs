@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use bit_field::{B4, B8, B12, bitfield};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
 use crate::{device::{Device, UnicornContext}, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
@@ -23,7 +23,7 @@ const MAGIC_WRITE: u16 = 0xa965;
 
 #[derive(Default)]
 pub struct RTCConfig {
-    //pub enabled: bool,
+    pub enabled: bool,
     pub write_enabled: bool,
     pub power_control: PowerControl,
     pub timekeeper: TimeKeeper,
@@ -121,7 +121,7 @@ impl TimeKeeper {
     pub fn refresh(&mut self) {
         let (now, current_sec) = Self::check_time();
         if self.prev_sec != current_sec {
-            debug!("Timestamp differs for 1 or more second. Refresh triggered.");
+            trace!("Timestamp differs for 1 or more second. Refresh triggered.");
             self.prev_sec = current_sec;
             self.cached_dt = DateTime::<Local>::from(now);
         }
@@ -137,6 +137,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     uc.get_data_mut().rtc.timekeeper.refresh();
 
     match addr {
+        REG_INIR => uc.get_data().rtc.enabled.into(),
         REG_AER => if uc.get_data().rtc.write_enabled { 0x10000 } else { 0x0 }
         REG_FCR => mmio_get_store_only(uc, BASE + addr),
         REG_TLR => uc.get_data().rtc.timekeeper.get_time_reg().into(),
@@ -166,6 +167,13 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 
     match addr {
+        REG_INIR => {
+            if value == MAGIC_INIT.into() {
+                debug!("MMIO reset.");
+                // TODO reset
+                uc.get_data_mut().rtc.enabled = true;
+            }
+        }
         REG_FCR => {
             debug!("Freq compensation: 0x{value:08x}");
             mmio_set_store_only(uc, BASE + addr, value);

@@ -131,6 +131,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     mmio_set_store_only(uc, 0xb0003008, 0x0000805A);
     mmio_set_store_only(uc, 0xb0003028, 0x094E7425);
 
+    // Home Key - not pressed
+    uc.get_data_mut().gpio.ports[0].data_in.set_p2(true);
+
     // VBAT comparator input
     uc.get_data_mut().gpio.ports[0].data_in.set_p3(true);
 

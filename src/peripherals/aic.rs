@@ -1,4 +1,4 @@
-use log::{error, trace, warn};
+use log::{debug, error, trace, warn};
 use crate::{device::{Device, StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
 
 pub const BASE: u64 = 0xB8000000;
@@ -91,7 +91,7 @@ impl Into<usize> for InterruptNumber {
 impl InterruptNumber {
     pub fn as_offset_shift(self) -> (usize, u8) {
         let a: usize = self.into();
-        (a / 8, ((a % 8) * 8) as u8)
+        (a / 4, ((a % 4) * 8) as u8)
     }
 
     pub fn as_mask(self) -> u32 {
