@@ -294,7 +294,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     
 }
 
-pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
+pub fn tick(uc: &mut UnicornContext) {
     if uc.get_data().aic.step && uc.get_data().aic.status_map != 0 {
         let (prio, _) = uc.get_data_mut().aic.pop_next_interrupt();
         exception::call_exception_handler(uc, match prio {

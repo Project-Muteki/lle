@@ -18,6 +18,8 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::os::raw::c_void;
+use std::string::FromUtf8Error;
+use std::fmt::Error as FormatError;
 
 use log::LevelFilter;
 use log::debug;
@@ -46,6 +48,7 @@ use crate::peripherals::rtc;
 use crate::peripherals::sdram;
 use crate::peripherals::tmr;
 use crate::peripherals::uart;
+use crate::peripherals::vpost;
 
 // TODO: Move this out of main
 #[derive(Debug)]
@@ -56,6 +59,8 @@ pub enum RuntimeError {
     LoaderInvalidMagic,
     SDAlreadyMounted,
     SDNotMounted,
+    FromUtf8Error(FromUtf8Error),
+    FormatError(FormatError),
 }
 
 impl From<io::Error> for RuntimeError {
@@ -67,6 +72,18 @@ impl From<io::Error> for RuntimeError {
 impl From<uc_error> for RuntimeError {
     fn from(value: uc_error) -> Self {
         Self::UnicornError(value)
+    }
+}
+
+impl From<FromUtf8Error> for RuntimeError {
+    fn from(value: FromUtf8Error) -> Self {
+        Self::FromUtf8Error(value)
+    }
+}
+
+impl From<FormatError> for RuntimeError {
+    fn from(value: FormatError) -> Self {
+        Self::FormatError(value)
     }
 }
 
@@ -186,6 +203,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.mmio_map(tmr::BASE, tmr::SIZE, Some(tmr::read), Some(tmr::write))?;
     uc.mmio_map(aic::BASE, aic::SIZE, Some(aic::read), Some(aic::write))?;
     uc.mmio_map(adc::BASE, adc::SIZE, Some(adc::read), Some(adc::write))?;
+    uc.mmio_map(vpost::BASE, vpost::SIZE, Some(vpost::read), Some(vpost::write))?;
 
     // Memory
     // SDRAM (32MiB) (Mapped at 0x80000000, mirrored to 0x00000000)

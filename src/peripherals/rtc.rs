@@ -4,7 +4,7 @@ use bit_field::{B4, B8, B12, bitfield};
 use log::{debug, error, trace, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
-use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
+use crate::{device::{QuitDetail, StopReason, UnicornContext, request_stop}, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
 
 pub const BASE: u64 = 0xb8003000;
 pub const SIZE: usize = 0x1000;
@@ -183,6 +183,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             power_control.set(0, 32, value);
             if !power_control.get_power_on() || power_control.get_power_off() {
                 debug!("RTC power off requested.");
+                request_stop(uc, StopReason::Tick);
             }
         }
         // TODO Setting a time offset
@@ -192,4 +193,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 
     //uc.get_data_mut().rtc.write_enabled = false;
+}
+
+pub fn tick(uc: &mut UnicornContext) {
+    let power_control = &uc.get_data().rtc.power_control;
+    if power_control.get_power_off() || !power_control.get_power_on() {
+        uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::CPUHalt);
+    }
 }

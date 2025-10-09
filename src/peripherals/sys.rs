@@ -32,6 +32,8 @@ const REG_CLKDIV4: u64 = CLK_BASE + 0x1c;
 const REG_APLLCON: u64 = CLK_BASE + 0x20;
 const REG_UPLLCON: u64 = CLK_BASE + 0x24;
 
+const GPIO_NAMES: [&str; 5] = ["GPIOA", "GPIOB", "GPIOC", "GPIOD", "GPIOE"];
+
 pub const F_BASE: u64 = 12_000_000;
 pub const F_BASE_RTC: u64 = 32_000;
 
@@ -350,24 +352,9 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             uc.get_data_mut().clk.clkdiv4.set(0, 32, value);
             uc.get_data_mut().clk.update_tick_config();
         }
-        REG_GPAFUN => {
-            debug!("GPIOA config 0x{value:08x}");
-            mmio_set_store_only(uc, BASE + addr, value);
-        }
-        REG_GPBFUN => {
-            debug!("GPIOB config 0x{value:08x}");
-            mmio_set_store_only(uc, BASE + addr, value);
-        }
-        REG_GPCFUN => {
-            debug!("GPIOC config 0x{value:08x}");
-            mmio_set_store_only(uc, BASE + addr, value);
-        }
-        REG_GPDFUN => {
-            debug!("GPIOD config 0x{value:08x}");
-            mmio_set_store_only(uc, BASE + addr, value);
-        }
-        REG_GPEFUN => {
-            debug!("GPIOE config 0x{value:08x}");
+        REG_GPAFUN | REG_GPBFUN | REG_GPCFUN | REG_GPDFUN | REG_GPEFUN => {
+            let index = usize::try_from(((addr - REG_GPAFUN) / 4) & 0x7).unwrap();
+            debug!("{} config 0x{value:08x}", GPIO_NAMES[index]);
             mmio_set_store_only(uc, BASE + addr, value);
         }
         REG_APLLCON => {
@@ -387,7 +374,7 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 }
 
-pub fn tick(uc: &mut UnicornContext, _device: &mut Device) {
+pub fn tick(uc: &mut UnicornContext) {
     if !uc.get_data().clk.ahbclk.get_cpu() {
         uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::CPUHalt);
     }

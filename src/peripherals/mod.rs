@@ -9,3 +9,4 @@ pub mod sic;
 pub mod sys;
 pub mod tmr;
 pub mod uart;
+pub mod vpost;

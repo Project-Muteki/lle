@@ -111,8 +111,9 @@ impl Device {
             return false;
         }
 
-        aic::tick(uc, self);
-        sys::tick(uc, self);
+        aic::tick(uc);
+        sys::tick(uc);
+        rtc::tick(uc);
         sic::tick(uc, self);
 
         let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
