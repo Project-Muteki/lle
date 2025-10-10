@@ -1,5 +1,5 @@
 use bit_field::{B2, B8, bitfield};
-use log::warn;
+use log::{trace, warn};
 use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 
 pub const BASE: u64 = 0xb8002000;
@@ -57,6 +57,7 @@ pub struct TimerChannel {
     pub count: u32,
     pub compare: u32,
     pub control: TimerControl,
+    /// Toggle out
     pub level: bool,
 }
 
@@ -93,9 +94,15 @@ impl TimerChannel {
         }
     }
 
+    #[inline]
     pub fn reset(&mut self) {
         self.control.set_reset(false);
         self.control.set_enable(false);
+        self.reset_counter();
+    }
+
+    #[inline]
+    pub fn reset_counter(&mut self) {
         self.count = 0;
         self.level = false;
     }
@@ -135,15 +142,33 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             if uc.get_data().tmr.channels[0].control.get_reset() {
                 uc.get_data_mut().tmr.channels[0].reset();
             }
+            if uc.get_data().tmr.channels[0].control.get_enable() {
+                let pc = uc.pc_read().unwrap();
+                trace!("TMR0 enable @ 0x{pc:08x}");
+            }
+            if uc.get_data().tmr.channels[0].control.get_irq_enable() { 
+                let pc = uc.pc_read().unwrap();
+                trace!("TMR0 IRQ enable @ 0x{pc:08x}");
+            }
+            trace!("REG_TCSR0 {:?}", uc.get_data().tmr.channels[0].control);
         }
         REG_TCSR1 => {
             uc.get_data_mut().tmr.channels[1].control.set(0, 32, value);
             if uc.get_data().tmr.channels[1].control.get_reset() {
                 uc.get_data_mut().tmr.channels[1].reset();
             }
+            trace!("REG_TCSR1 {:?}", uc.get_data().tmr.channels[1].control);
         }
-        REG_TICR0 => uc.get_data_mut().tmr.channels[0].compare = u32::try_from(value & 0xffffffff).unwrap(),
-        REG_TICR1 => uc.get_data_mut().tmr.channels[1].compare = u32::try_from(value & 0xffffffff).unwrap(),
+        REG_TICR0 => {
+            uc.get_data_mut().tmr.channels[0].compare = u32::try_from(value & 0xffffffff).unwrap();
+            uc.get_data_mut().tmr.channels[0].reset_counter();
+            trace!("REG_TICR0 {:?}", uc.get_data().tmr.channels[0].compare);
+        },
+        REG_TICR1 => {
+            uc.get_data_mut().tmr.channels[1].compare = u32::try_from(value & 0xffffffff).unwrap();
+            uc.get_data_mut().tmr.channels[1].reset_counter();
+            trace!("REG_TICR1 {:?}", uc.get_data().tmr.channels[1].compare);
+        }
         REG_TISR => uc.get_data_mut().tmr.status &= !u8::try_from(value & 0xff).unwrap(),
         REG_WTCR => uc.get_data_mut().tmr.watchdog.set(0, 8, value),
         _ => log_unsupported_write!(addr, size, value),

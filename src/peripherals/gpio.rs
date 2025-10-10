@@ -1,4 +1,4 @@
-use log::warn;
+use log::{trace, warn};
 use bit_field::{B2, B4, bitfield};
 
 use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};
@@ -128,11 +128,11 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
             uc.get_data().gpio.ports[port].irq_src.get(0, 32)
         }
         REG_IRQEN_BLOCK_START..REG_IRQEN_BLOCK_END => {
-            let port = usize::from(((addr - REG_IRQSRC_BLOCK_START >> 4) & 0xf) as u8);
+            let port = usize::from(((addr - REG_IRQEN_BLOCK_START >> 4) & 0xf) as u8);
             uc.get_data().gpio.ports[port].irq_enable.get(0, 16)
         }
         REG_IRQLH_BLOCK_START..REG_IRQLH_BLOCK_END => {
-            let port = usize::from(((addr - REG_IRQSRC_BLOCK_START >> 4) & 0xf) as u8);
+            let port = usize::from(((addr - REG_IRQLH_BLOCK_START >> 4) & 0xf) as u8);
             uc.get_data().gpio.ports[port].irq_latch.get(0, 16)
         }
         REG_DBNCECON => { uc.get_data().gpio.debounce.get(0, 8) }
@@ -183,11 +183,11 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             uc.get_data_mut().gpio.ports[port].irq_src.set(0, 32, value)
         }
         REG_IRQEN_BLOCK_START..REG_IRQEN_BLOCK_END => {
-            let port = usize::from(((addr - REG_IRQSRC_BLOCK_START >> 4) & 0xf) as u8);
+            let port = usize::from(((addr - REG_IRQEN_BLOCK_START >> 4) & 0xf) as u8);
             uc.get_data_mut().gpio.ports[port].irq_enable.set(0, 16, value)
         }
         REG_IRQLH_BLOCK_START..REG_IRQLH_BLOCK_END => {
-            let port = usize::from(((addr - REG_IRQSRC_BLOCK_START >> 4) & 0xf) as u8);
+            let port = usize::from(((addr - REG_IRQLH_BLOCK_START >> 4) & 0xf) as u8);
             uc.get_data_mut().gpio.ports[port].irq_latch.set(0, 16, value)
         }
         REG_DBNCECON => { uc.get_data_mut().gpio.debounce.set(0, 8, value) }

@@ -23,7 +23,10 @@ use std::fmt::Error as FormatError;
 
 use log::LevelFilter;
 use log::debug;
+use log::error;
 use log::info;
+use pixels::Pixels;
+use pixels::SurfaceTexture;
 use unicorn_engine::ArmCpuModel;
 use unicorn_engine::HookType;
 use unicorn_engine::Permission;
@@ -38,17 +41,26 @@ use env_logger;
 
 use device::Device;
 use peripherals::{sic, sys, gpio};
+use winit::event::Event;
+use winit::event::WindowEvent;
 
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
 use crate::peripherals::adc;
 use crate::peripherals::aic;
+use crate::peripherals::blt;
 use crate::peripherals::common::mmio_set_store_only;
+use crate::peripherals::i2s;
+use crate::peripherals::pwm;
 use crate::peripherals::rtc;
 use crate::peripherals::sdram;
+use crate::peripherals::spu;
 use crate::peripherals::tmr;
 use crate::peripherals::uart;
 use crate::peripherals::vpost;
+
+use winit::{dpi::LogicalSize, event_loop::EventLoop, window::{Window, WindowBuilder}};
+use winit_input_helper::WinitInputHelper;
 
 // TODO: Move this out of main
 #[derive(Debug)]
@@ -173,6 +185,9 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     uc.get_data_mut().adc.xdata = 1023;
     // TODO: Set other initial states
 
+    // RTC 24hr mode
+    uc.get_data_mut().rtc.timekeeper.is_24hr = true;
+
     info!("bootrom_hle: BootROM stage done.");
     Ok(())
 }
@@ -181,10 +196,13 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
 /// 
 /// This does not populate registers, nor boots from the SD card. These are handled in run_bootrom().
 fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
-    let data = Box::new(ExtraState {
-        raw_sdram: vec![0u8; 0x2000000], ..Default::default()
-    });
-    let mut uc = Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, data)?;
+    let mut uc = {
+        let data = Box::new(ExtraState {
+            raw_sdram: vec![0u8; 0x2000000], ..Default::default()
+        });
+        Unicorn::new_with_data(Arch::ARM, Mode::LITTLE_ENDIAN, data)?
+    };
+
     uc.ctl_set_cpu_model(ArmCpuModel::UC_CPU_ARM_926.into())?;
     uc.ctl_tlb_type(TlbType::CPU)?;
 
@@ -192,6 +210,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.add_code_hook(0, 0xffffffff, device::check_stop_condition)?;
 
     uc.add_mem_hook(HookType::MEM_UNMAPPED, 0, 0xffffffff, exception::unmapped_access)?;
+    uc.add_intr_hook(exception::intr)?;
 
     // MMIO registers
     uc.mmio_map(sys::BASE, sys::SIZE, Some(sys::read), Some(sys::write))?;
@@ -204,6 +223,10 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     uc.mmio_map(aic::BASE, aic::SIZE, Some(aic::read), Some(aic::write))?;
     uc.mmio_map(adc::BASE, adc::SIZE, Some(adc::read), Some(adc::write))?;
     uc.mmio_map(vpost::BASE, vpost::SIZE, Some(vpost::read), Some(vpost::write))?;
+    uc.mmio_map(spu::BASE, spu::SIZE, Some(spu::read), Some(spu::write))?;
+    uc.mmio_map(pwm::BASE, pwm::SIZE, Some(pwm::read), Some(pwm::write))?;
+    uc.mmio_map(i2s::BASE, i2s::SIZE, Some(i2s::read), Some(i2s::write))?;
+    uc.mmio_map(blt::BASE, blt::SIZE, Some(blt::read), Some(blt::write))?;
 
     // Memory
     // SDRAM (32MiB) (Mapped at 0x80000000, mirrored to 0x00000000)
@@ -236,22 +259,51 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
 
+    let event_loop = EventLoop::new().unwrap();
+    let input = WinitInputHelper::new();
+    let window = {
+        let size = LogicalSize::new(320.0, 240.0);
+        WindowBuilder::new()
+            .with_title("lle")
+            .with_inner_size(size)
+            .with_min_inner_size(size)
+            .build(&event_loop).unwrap()
+    };
+
     let mut emulator = emu_init().unwrap();
-    let mut device = Box::new(Device::default());
     let uc = &mut emulator;
+
+    let mut device = Box::new(Device::default());
+    let mut pixels = {
+        let window_size = window.inner_size();
+        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
+        Pixels::new(320, 240, surface_texture).unwrap()
+    };
 
     let mut esd_img = File::open(&args.esd).unwrap();
     run_bootrom(uc, &mut esd_img).unwrap();
     device.internal_sd.mount(&args.esd).unwrap();
 
     // TODO move this out of main
-    loop {
-        let pc = uc.pc_read().unwrap();
-        uc.emu_start(pc, 0xffffffffffffffff, 0, 0).unwrap();
-        if !device.tick(uc) {
-            break;
+    event_loop.run(|event, elwt| {
+        if let Event::WindowEvent {
+            event: WindowEvent::RedrawRequested,
+            ..
+        } = event {
+            // TODO
         }
-    }
+
+        let pc = uc.pc_read().unwrap();
+        uc.emu_start(pc, 0xffffffffffffffff, 0, 0).or_else(|err| {
+            error!("Unhandled Unicorn error {err:?} at PC=0x{:08x}", uc.pc_read().unwrap());
+            Err(err)
+        }).unwrap();
+        if !device.tick(uc, &pixels) {
+            elwt.exit();
+            return;
+        }
+        window.request_redraw();
+    }).unwrap();
 
     device.internal_sd.unmount();
     device.external_sd.unmount();

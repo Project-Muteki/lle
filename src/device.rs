@@ -2,9 +2,11 @@ use core::fmt;
 use std::{collections::HashMap, mem};
 
 use log::{error, info};
+use pixels::Pixels;
 use unicorn_engine::Unicorn;
+use winit::window::Window;
 
-use crate::{extdev::sd::SD, peripherals::{adc, aic, gpio, rtc, sic, sys, tmr, uart}};
+use crate::{exception::{ExceptionType, call_exception_handler}, extdev::sd::SD, peripherals::{adc, aic, gpio, rtc, sic, sys, tmr, uart, vpost}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -35,6 +37,8 @@ pub enum StopReason {
     Quit(QuitDetail),
     /// Ticking devices.
     Tick,
+    FrameStep,
+    SVC,
 }
 
 /// Extra emulator states.
@@ -55,6 +59,7 @@ pub struct ExtraState {
     pub tmr: tmr::TimerConfig,
     pub aic: aic::AICConfig,
     pub adc: adc::ADCConfig,
+    pub vpost: vpost::LCDConfig,
 }
 
 /// Peripheral device emulation context.
@@ -90,6 +95,7 @@ pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
 
     // TODO emulate actual clock behavior
     let steps = uc.get_data().steps;
+    vpost::generate_stop_condition(uc, steps);
     tmr::generate_stop_condition(uc, steps);
 
     // Collect either the 
@@ -105,16 +111,35 @@ impl Device {
     /// Process MMIO register updates and device state changes.
     ///
     /// This will modify both the device states and the emulator states associated with it.
-    pub fn tick(&mut self, uc: &mut UnicornContext) -> bool {
-        if let StopReason::Quit(reason) = &uc.get_data().stop_reason {
-            info!("Quit condition pre-check: {reason}");
-            return false;
+    pub fn tick(&mut self, uc: &mut UnicornContext, render: &Pixels) -> bool {
+        match &uc.get_data().stop_reason {
+            StopReason::Run => {}
+            StopReason::Quit(reason) => {
+                info!("Quit condition pre-check: {reason}");
+                return false;
+            },
+            StopReason::FrameStep => {
+                match render.render() {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Failed to render image: {err:?}");
+                        uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::HLECallbackFailure);
+                    },
+                }
+            }
+            StopReason::SVC => {
+                call_exception_handler(uc, ExceptionType::SupervisorCall).unwrap_or_else(|err| {
+                    error!("Failed to invoke exception handler: {err:?}.");
+                });
+            }
+            StopReason::Tick => {
+                aic::tick(uc);
+                sys::tick(uc);
+                rtc::tick(uc);
+                sic::tick(uc, self);
+            }
         }
 
-        aic::tick(uc);
-        sys::tick(uc);
-        rtc::tick(uc);
-        sic::tick(uc, self);
 
         let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
         if let StopReason::Quit(reason) = prev_reason {

@@ -232,7 +232,12 @@ fn test() {
 fn read_cstr(uc: &UnicornContext, address: u64) -> Result<String, RuntimeError> {
     let mut tmp = [0u8; 256];
     let mut result: Vec<u8> = vec![];
-    let mut current_address = address;
+    // HACK: Manually fix pointers after TLB. We need a proper way of looking up pointers when needed.
+    let mut current_address = if address < 0x2000 {
+        address + 0xff000000
+    } else {
+        address
+    };
     loop {
         uc.mem_read(current_address, &mut tmp)?;
         let copy_size = tmp.iter().position(|e| *e == 0).unwrap_or(tmp.len());
@@ -363,7 +368,8 @@ fn printf(uc: &mut UnicornContext) -> Result<(), RuntimeError> {
 
 pub fn printf_callback(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     printf(uc).unwrap_or_else(|err| {
-        error!("Failed to execute printf: {err:?}");
+        let lr = uc.reg_read(RegisterARM::LR).unwrap();
+        error!("Failed to execute printf at 0x{lr:08x}: {err:?}");
         request_stop(uc, crate::device::StopReason::Quit(QuitDetail::HLECallbackFailure));
     })
 }

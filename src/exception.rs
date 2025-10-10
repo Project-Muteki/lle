@@ -1,7 +1,7 @@
 use log::{error, trace};
 use unicorn_engine::{MemType, RegisterARM, uc_error};
 
-use crate::device::UnicornContext;
+use crate::device::{QuitDetail, StopReason, UnicornContext, request_stop};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -65,7 +65,19 @@ pub fn call_exception_handler(uc: &mut UnicornContext, exc_type: ExceptionType) 
     Ok(())
 }
 
-pub fn unmapped_access(_uc: &mut UnicornContext, access_type: MemType, addr: u64, size: usize, value: i64) -> bool {
-    error!("exception: {access_type:?} of {size} bytes at 0x{addr:08x}, value 0x{value:08x}.");
+pub fn unmapped_access(uc: &mut UnicornContext, access_type: MemType, addr: u64, size: usize, value: i64) -> bool {
+    let pc = uc.pc_read().unwrap();
+    error!("exception: {access_type:?} of {size} bytes at 0x{addr:08x}, value 0x{value:08x}, by 0x{pc:08x}.");
     false
+}
+
+pub fn intr(uc: &mut UnicornContext, intno: u32) {
+    if intno == 2 {
+        let pc = uc.pc_read().unwrap();
+        uc.reg_write(RegisterARM::LR, pc).unwrap();
+        request_stop(uc, StopReason::SVC);
+    } else {
+        error!("Not int2. This should not have happened.");
+        request_stop(uc, StopReason::Quit(QuitDetail::CPUException));
+    }
 }

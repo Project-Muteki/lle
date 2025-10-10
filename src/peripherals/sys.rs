@@ -200,6 +200,7 @@ pub struct TickConfig {
     pub f_cpu: u64,
     pub hclk1: u64,
     pub apb: u64,
+    pub vsync: u64,
 }
 
 const XIN: PLLConfig = PLLConfig {
@@ -247,6 +248,7 @@ impl ClockConfig {
             1
         };
         self.tick_config.apb = self.tick_config.hclk1 * (u64::from(self.clkdiv4.get_apb_div()) + 1);
+        self.tick_config.vsync = self.tick_config.f_cpu / 60;
         debug!("{:?}", self.tick_config);
     }
 }

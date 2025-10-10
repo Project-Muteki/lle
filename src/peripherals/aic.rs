@@ -1,4 +1,5 @@
 use log::{error, trace, warn};
+use unicorn_engine::RegisterARM;
 use crate::{device::{Device, StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
 
 pub const BASE: u64 = 0xb8000000;
@@ -186,12 +187,16 @@ impl AICConfig {
         self.set_joint_status(js & !mask);
     }
 
-    pub fn next_interrupt(&self) -> (u8, u8) {
+    pub fn next_interrupt(&self, skip_fiq: bool) -> (u8, u8) {
         if self.status_map == 0 {
             warn!("Interrupt status table is empty. This is probably a redundant check.");
             return (0, 0);
         }
-        let next_pending_prio = BCS8[usize::from(self.status_map)];
+        let fiq_mask = !u8::from(skip_fiq);
+        if self.status_map & fiq_mask == 0 {
+            return (0, 0);
+        }
+        let next_pending_prio = BCS8[usize::from(self.status_map & fiq_mask)];
         let next_pending = self.status[usize::from(next_pending_prio)];
 
         if next_pending == 0 {
@@ -210,8 +215,11 @@ impl AICConfig {
         (next_pending_prio, num)
     }
 
-    pub fn pop_next_interrupt(&mut self) -> (u8, u8) {
-        let (prio, num) = self.next_interrupt();
+    pub fn pop_next_interrupt(&mut self, skip_fiq: bool) -> (u8, u8) {
+        let (prio, num) = self.next_interrupt(skip_fiq);
+        if prio == 0 && num == 0 {
+            return (0, 0);
+        }
         self.current_interrupt = (prio, num);
         let new_status = self.status[usize::from(prio)] & !(1 << num);
         self.status[usize::from(prio)] = new_status;
@@ -301,13 +309,21 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
 
 pub fn tick(uc: &mut UnicornContext) {
     if uc.get_data().aic.step && uc.get_data().aic.status_map != 0 {
-        let (prio, _) = uc.get_data_mut().aic.pop_next_interrupt();
-        exception::call_exception_handler(uc, match prio {
-            0 => exception::ExceptionType::FIQ,
-            _ => exception::ExceptionType::IRQ,
-        }).unwrap_or_else(|err| {
-            error!("Failed to invoke exception handler: {err:?}.");
-        });
+        if
+            let Ok(cpsr) = uc.reg_read(RegisterARM::CPSR) &&
+            cpsr & 0b11000000 != 0b11000000
+        {
+            let (prio, num) = uc.get_data_mut().aic.pop_next_interrupt(cpsr & 0b1000000 != 0);
+            if prio == 0 && num == 0 {
+                return;
+            }
+            exception::call_exception_handler(uc, match prio {
+                0 => exception::ExceptionType::FIQ,
+                _ => exception::ExceptionType::IRQ,
+            }).unwrap_or_else(|err| {
+                error!("Failed to invoke exception handler: {err:?}.");
+            });
+        }
     }
 }
 
