@@ -38,7 +38,7 @@ pub fn call_exception_handler(uc: &mut UnicornContext, exc_type: ExceptionType) 
     let computed_lr = match exc_type {
         ExceptionType::Reset => current_pc,  // Undefined
         ExceptionType::UndefinedInstruction => current_pc + 4,  // Next instruction
-        ExceptionType::SupervisorCall => current_pc + 4,  // Next instruction
+        ExceptionType::SupervisorCall => current_pc,  // Next instruction (QEMU already gives us next instruction)
         ExceptionType::PrefetchAbort => current_pc + 4,  // Affected instruction + 4
         ExceptionType::DataAbort => current_pc + 8,  // Affected instruction + 8
         ExceptionType::IRQ => current_pc + 4,  // Next instruction
@@ -73,8 +73,6 @@ pub fn unmapped_access(uc: &mut UnicornContext, access_type: MemType, addr: u64,
 
 pub fn intr(uc: &mut UnicornContext, intno: u32) {
     if intno == 2 {
-        let pc = uc.pc_read().unwrap();
-        uc.reg_write(RegisterARM::LR, pc).unwrap();
         request_stop(uc, StopReason::SVC);
     } else {
         error!("Not int2. This should not have happened.");
