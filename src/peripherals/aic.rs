@@ -108,17 +108,19 @@ impl AICConfig {
 
     /// Check whether there's a need to fire ann interrupt, and if so, record it and return `true`.
     pub fn check_interrupt(&mut self, intno: InterruptNumber, incoming: bool, latched: bool) -> bool {
+        trace!("IRQ check {intno:?} in={incoming} latch={latched}");
         let mask: u32 = intno.as_mask();
-        if self.enabled & mask != 0 {
+        if self.enabled & mask == 0 {
+            trace!(" => IRQ is masked.");
             return false;
         }
 
         let level = self.get_level(intno);
-        let trigger = match level & 0x30 {
+        let trigger = match level & 0xc0 {
             0x00 => !incoming,
-            0x10 => incoming,
-            0x20 => incoming != latched && !incoming,
-            0x30 => incoming != latched && incoming,
+            0x40 => incoming,
+            0x80 => incoming != latched && !incoming,
+            0xc0 => incoming != latched && incoming,
             _ => panic!(),
         };
 
@@ -211,8 +213,11 @@ impl AICConfig {
     pub fn pop_next_interrupt(&mut self) -> (u8, u8) {
         let (prio, num) = self.next_interrupt();
         self.current_interrupt = (prio, num);
-        let status = self.status[usize::from(prio)];
-        self.status[usize::from(prio)] = status & !(1 << num);
+        let new_status = self.status[usize::from(prio)] & !(1 << num);
+        self.status[usize::from(prio)] = new_status;
+        if new_status == 0 {
+            self.status_map &= !(1 << prio);
+        }
         (prio, num)
     }
 }
