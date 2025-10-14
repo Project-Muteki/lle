@@ -287,11 +287,12 @@ fn main() {
 
     // TODO move this out of main
     event_loop.run(|event, elwt| {
-        if let Event::WindowEvent {
-            event: WindowEvent::RedrawRequested,
-            ..
-        } = event {
+        if let Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } = event {
+            window.request_redraw();
             // TODO
+        } else if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
+            elwt.exit();
+            return;
         }
 
         let pc = uc.pc_read().unwrap();
@@ -306,7 +307,6 @@ fn main() {
             elwt.exit();
             return;
         }
-        window.request_redraw();
     }).unwrap();
 
     device.internal_sd.unmount();
