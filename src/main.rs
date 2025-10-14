@@ -287,14 +287,6 @@ fn main() {
 
     // TODO move this out of main
     event_loop.run(|event, elwt| {
-        if let Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } = event {
-            window.request_redraw();
-            // TODO
-        } else if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
-            elwt.exit();
-            return;
-        }
-
         let pc = uc.pc_read().unwrap();
         uc.emu_start(pc, 0xffffffffffffffff, 0, 0).or_else(|err| {
             error!("Unhandled Unicorn error {err:?} at PC=0x{:08x}", uc.pc_read().unwrap());
@@ -304,6 +296,14 @@ fn main() {
             Err(err)
         }).unwrap();
         if !device.tick(uc, &pixels) {
+            elwt.exit();
+            return;
+        }
+
+        if let Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } = event {
+            window.request_redraw();
+            // TODO
+        } else if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             elwt.exit();
             return;
         }

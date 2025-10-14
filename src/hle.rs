@@ -7,6 +7,8 @@ use unicorn_engine::{RegisterARM, uc_error};
 
 use crate::{RuntimeError, device::{QuitDetail, UnicornContext, request_stop}};
 
+const NAME_PRINTF: &str = "lle::hle::printf";
+
 const FORMAT_REGEX: &str = concat!(
     r"%(?:(?<escape>%)|",
         r"(?<flags>[-+ #0]+)?",
@@ -362,7 +364,7 @@ fn printf(uc: &mut UnicornContext) -> Result<(), RuntimeError> {
             ConversionSegment::Float { format, type_ } => todo!(),
         }
     }
-    info!("{}", &out.trim());
+    info!(target: NAME_PRINTF, "{}", &out.trim());
     Ok(())
 }
 
