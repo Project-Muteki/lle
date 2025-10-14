@@ -192,7 +192,6 @@ pub fn generate_stop_condition(uc: &mut UnicornContext, steps: u64) {
         }
     }
 
-    // TODO: This is not exactly correct: the correct way would be passing the level variable and the change to the post_interrupt callback.
     if uc.get_data_mut().tmr.channels[0].check_irq_condition() {
         uc.get_data_mut().tmr.status |= 0x1;
         post_interrupt(uc, InterruptNumber::TMR0, true, false);

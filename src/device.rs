@@ -4,7 +4,6 @@ use std::{collections::HashMap, mem};
 use log::{error, info};
 use pixels::Pixels;
 use unicorn_engine::Unicorn;
-use winit::window::Window;
 
 use crate::{exception::{ExceptionType, call_exception_handler}, extdev::sd::SD, peripherals::{adc, aic, gpio, rtc, sic, sys, tmr, uart, vpost}};
 
@@ -98,13 +97,11 @@ pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     vpost::generate_stop_condition(uc, steps);
     tmr::generate_stop_condition(uc, steps);
 
-    // Collect either the 
     if !matches!(uc.get_data().stop_reason, StopReason::Run) {
         uc.emu_stop().unwrap_or_else(|err| {
             error!("Failed to stop emulator: {err:?}");
         });
     }
-
 }
 
 impl Device {

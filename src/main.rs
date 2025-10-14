@@ -46,6 +46,7 @@ use winit::event::WindowEvent;
 
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
+use crate::exception::dump_data;
 use crate::peripherals::adc;
 use crate::peripherals::aic;
 use crate::peripherals::blt;
@@ -59,7 +60,7 @@ use crate::peripherals::tmr;
 use crate::peripherals::uart;
 use crate::peripherals::vpost;
 
-use winit::{dpi::LogicalSize, event_loop::EventLoop, window::{Window, WindowBuilder}};
+use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
 use winit_input_helper::WinitInputHelper;
 
 // TODO: Move this out of main
@@ -274,7 +275,7 @@ fn main() {
     let uc = &mut emulator;
 
     let mut device = Box::new(Device::default());
-    let mut pixels = {
+    let pixels = {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         Pixels::new(320, 240, surface_texture).unwrap()
@@ -296,6 +297,9 @@ fn main() {
         let pc = uc.pc_read().unwrap();
         uc.emu_start(pc, 0xffffffffffffffff, 0, 0).or_else(|err| {
             error!("Unhandled Unicorn error {err:?} at PC=0x{:08x}", uc.pc_read().unwrap());
+            dump_data(uc).unwrap_or_else(|err| {
+                error!("Failed to dump memory: {err:?}");
+            });
             Err(err)
         }).unwrap();
         if !device.tick(uc, &pixels) {

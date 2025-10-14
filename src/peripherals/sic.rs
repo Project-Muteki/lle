@@ -433,6 +433,10 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         }
                     },
                     Ok(_) => {
+                        let end = dest + u64::try_from(size_final & 0xffffffffffffffff).unwrap();
+                        uc.ctl_remove_cache(dest, end).unwrap_or_else(|err| {
+                            error!("Failed to remove TB: {err:?}");
+                        });
                         uc.get_data_mut().sic.dma_count += size_final;
                         uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(true);
                         uc.get_data_mut().sic.sd_irq.set_block_xfer_done(true);

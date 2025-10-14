@@ -1,7 +1,9 @@
+use std::{fs::File, io::Write};
+
 use log::{error, trace};
 use unicorn_engine::{MemType, RegisterARM, uc_error};
 
-use crate::device::{QuitDetail, StopReason, UnicornContext, request_stop};
+use crate::{RuntimeError, device::{QuitDetail, StopReason, UnicornContext, request_stop}};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -45,17 +47,17 @@ pub fn call_exception_handler(uc: &mut UnicornContext, exc_type: ExceptionType) 
         ExceptionType::FIQ => current_pc + 4,  // Next instruction
     };
 
-    let computed_mode = match exc_type {
-        ExceptionType::Reset => 0b11111,  // sys
-        ExceptionType::UndefinedInstruction => 0b11011,  // und
-        ExceptionType::SupervisorCall => 0b10011,  // svc
-        ExceptionType::PrefetchAbort | ExceptionType::DataAbort => 0b10111,  // abt
-        ExceptionType::IRQ => 0b10010,  // irq
-        ExceptionType::FIQ => 0b10001,  // fiq
+    let computed_cpsr_set = match exc_type {
+        ExceptionType::Reset => 0b11010011,  // svc, no interrupt
+        ExceptionType::UndefinedInstruction => 0b10011011,  // und, no irq
+        ExceptionType::SupervisorCall => 0b10010011,  // svc, no irq
+        ExceptionType::PrefetchAbort | ExceptionType::DataAbort => 0b10010111,  // abt, no irq
+        ExceptionType::IRQ => 0b10010010,  // irq, no irq
+        ExceptionType::FIQ => 0b11010001,  // fiq, no interrupt
     };
 
     let cpsr = uc.reg_read(RegisterARM::CPSR)?;
-    let new_cpsr = (cpsr & !0b11111) | computed_mode;
+    let new_cpsr = (cpsr & !0b00111111) | computed_cpsr_set;
     // Switch mode
     uc.reg_write(RegisterARM::CPSR, new_cpsr)?;
     uc.reg_write(RegisterARM::SPSR, cpsr)?;
@@ -78,4 +80,38 @@ pub fn intr(uc: &mut UnicornContext, intno: u32) {
         error!("Not int2. This should not have happened.");
         request_stop(uc, StopReason::Quit(QuitDetail::CPUException));
     }
+}
+
+pub fn dump_data(uc: &UnicornContext) -> Result<(), RuntimeError> {
+    let regs: Vec<u64> = uc.reg_read_batch(&[
+        RegisterARM::R0,
+        RegisterARM::R1,
+        RegisterARM::R2,
+        RegisterARM::R3,
+        RegisterARM::R4,
+        RegisterARM::R5,
+        RegisterARM::R6,
+        RegisterARM::R7,
+        RegisterARM::R8,
+        RegisterARM::R9,
+        RegisterARM::R10,
+        RegisterARM::R11,
+        RegisterARM::R12,
+        RegisterARM::SP,
+        RegisterARM::LR,
+        RegisterARM::PC,
+        RegisterARM::CPSR,
+        RegisterARM::SPSR,
+    ], 18)?.iter().map(|val| val & 0xffffffff).collect();
+    error!("R0=0x{:08x} R1=0x{:08x} R2=0x{:08x} R3=0x{:08x}", regs[0], regs[1], regs[2], regs[3]);
+    error!("R4=0x{:08x} R5=0x{:08x} R6=0x{:08x} R7=0x{:08x}", regs[4], regs[5], regs[6], regs[7]);
+    error!("R8=0x{:08x} R9=0x{:08x} R10=0x{:08x} R11=0x{:08x}", regs[8], regs[9], regs[10], regs[11]);
+    error!("R12=0x{:08x} SP=0x{:08x} LR=0x{:08x} PC=0x{:08x}", regs[12], regs[13], regs[14], regs[15]);
+    error!("CPSR=0x{:08x} SPSR=0x{:08x}", regs[16], regs[17]);
+    let mut sdram_dump = File::options().write(true).create(true).open("sdram.bin")?;
+    sdram_dump.write(&uc.get_data().raw_sdram)?;
+    let mut sram_dump = File::options().write(true).create(true).open("sram.bin")?;
+    let sram_data = uc.mem_read_as_vec(0xff000000, 8192)?;
+    sram_dump.write(&sram_data)?;
+    Ok(())
 }
