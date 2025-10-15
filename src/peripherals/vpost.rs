@@ -74,9 +74,9 @@ pub struct LCDIRQStatus {
 
 #[derive(Default)]
 pub struct LCDConfig {
-    control: LCDControl,
-    irq: LCDIRQStatus,
-    fb: u32,
+    pub control: LCDControl,
+    pub irq: LCDIRQStatus,
+    pub fb: u32,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -88,6 +88,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         LCDC_CTL => uc.get_data().vpost.control.get(0, 32),
         LCDC_INT => uc.get_data().vpost.irq.get(0, 32),
         LCDC_PRM | TCON1 | TCON2 | TCON3 | TCON4 => mmio_get_store_only(uc, BASE + addr),
+        FSADDR => uc.get_data().vpost.fb.into(),
         _ => {
             log_unsupported_read!(addr, size);
             0
@@ -110,6 +111,9 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             uc.get_data_mut().vpost.irq.set(0, 32, value);
         },
         LCDC_PRM | TCON1 | TCON2 | TCON3 | TCON4 => mmio_set_store_only(uc, BASE + addr, value),
+        FSADDR => {
+            uc.get_data_mut().vpost.fb = value as u32;
+        }
         _ => {
             log_unsupported_write!(addr, size, value);
         }
@@ -122,4 +126,3 @@ pub fn generate_stop_condition(uc: &mut UnicornContext, steps: u64) {
         request_stop(uc, StopReason::FrameStep);
     }
 }
-

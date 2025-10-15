@@ -1,11 +1,11 @@
 use core::fmt;
-use std::{collections::HashMap, mem};
+use std::{collections::HashMap, iter::zip, mem};
 
-use log::{error, info};
+use log::{error, info, trace};
 use pixels::Pixels;
 use unicorn_engine::Unicorn;
 
-use crate::{exception::{ExceptionType, call_exception_handler}, extdev::sd::SD, peripherals::{adc, aic, gpio, rtc, sic, sys, tmr, uart, vpost}};
+use crate::{exception::{ExceptionType, call_exception_handler}, extdev::sd::SD, peripherals::{adc, aic, blt, gpio, rtc, sic, sys, tmr, uart, vpost}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -59,6 +59,7 @@ pub struct ExtraState {
     pub aic: aic::AICConfig,
     pub adc: adc::ADCConfig,
     pub vpost: vpost::LCDConfig,
+    pub blt: blt::BLTConfig,
 }
 
 /// Peripheral device emulation context.
@@ -108,7 +109,7 @@ impl Device {
     /// Process MMIO register updates and device state changes.
     ///
     /// This will modify both the device states and the emulator states associated with it.
-    pub fn tick(&mut self, uc: &mut UnicornContext, render: &Pixels) -> bool {
+    pub fn tick(&mut self, uc: &mut UnicornContext, render: &mut Pixels) -> bool {
         match &uc.get_data().stop_reason {
             StopReason::Run => {}
             StopReason::Quit(reason) => {
@@ -116,6 +117,16 @@ impl Device {
                 return false;
             },
             StopReason::FrameStep => {
+                if uc.get_data().vpost.control.get_run() {
+                    trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
+                    let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();
+                    for (spx, dpx) in zip(a.chunks_exact(2), render.frame_mut().chunks_exact_mut(4)) {
+                        dpx[0] = spx[1] & 0b11111000;
+                        dpx[1] = ((spx[1] & 0b111) << 5) | ((spx[0] & 0b11100000) >> 3);
+                        dpx[2] = spx[0] << 3;
+                        dpx[3] = 0xff;
+                    }
+                }
                 match render.render() {
                     Ok(_) => {}
                     Err(err) => {
@@ -134,6 +145,7 @@ impl Device {
                 sys::tick(uc);
                 rtc::tick(uc);
                 sic::tick(uc, self);
+                blt::tick(uc);
             }
         }
 

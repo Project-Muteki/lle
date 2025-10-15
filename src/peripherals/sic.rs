@@ -433,7 +433,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         }
                     },
                     Ok(_) => {
-                        let end = dest + u64::try_from(size_final & 0xffffffffffffffff).unwrap();
+                        let end = dest + u64::try_from(size_final).unwrap();
                         uc.ctl_remove_cache(dest, end).unwrap_or_else(|err| {
                             error!("Failed to remove TB: {err:?}");
                         });

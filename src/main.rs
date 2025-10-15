@@ -275,7 +275,7 @@ fn main() {
     let uc = &mut emulator;
 
     let mut device = Box::new(Device::default());
-    let pixels = {
+    let mut pixels = {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         Pixels::new(320, 240, surface_texture).unwrap()
@@ -296,7 +296,7 @@ fn main() {
                 });
                 Err(err)
             }).unwrap();
-            if !device.tick(uc, &pixels) {
+            if !device.tick(uc, &mut pixels) {
                 elwt.exit();
                 return;
             }
