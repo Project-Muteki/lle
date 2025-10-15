@@ -312,6 +312,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
     let sd_port = sd_control.get_sdport();
     let has_data_in = sd_control.get_di_en();
     let has_data_out = sd_control.get_do_en();
+    let has_data_io = has_data_in || has_data_out;
 
     let mut skip_data = false;
 
@@ -402,7 +403,7 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
         }
     }
 
-    if !skip_data && has_data_in {
+    if !skip_data && has_data_io {
         let dest = uc.get_data().sic.dma_dest_addr;
         let sd_device_op = match sd_port {
             0 => Some(&mut device.internal_sd),
@@ -410,19 +411,22 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
             _ => None
         };
 
-        match sd_device_op {
-            Some(sd_device) => {
-                let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
-                let mult = usize::from(uc.get_data().sic.sd_control.get_blkcnt());
-                // TODO multiply by blkcnt if that value is set, and then the recv_data routine will need to try to fill the slice as much as
-                // possible until the limit on the SD card side has been reached.
-                let size_final = if mult == 0 {
-                    size
-                } else {
-                    size * mult
-                };
+        if let Some(sd_device) = sd_device_op {
+            let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
+            let mult = usize::from(uc.get_data().sic.sd_control.get_blkcnt());
+            // Multiply by blkcnt if that value is set, and then the recv_data routine will need to try to fill the slice as much as
+            // possible until the limit on the SD card side has been reached.
+            let size_final = if mult == 0 {
+                size
+            } else {
+                size * mult
+            };
+
+            if has_data_in {
+                trace!("Process data in");
                 let mut buf = vec![0u8; size_final];
                 sd_device.recv_data(&mut buf);
+                trace!("Recv done");
                 match uc.mem_write(dest, &buf) {
                     Err(err) => {
                         error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");
@@ -446,18 +450,108 @@ pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
                         }
                     }
                 }
-                uc.get_data_mut().sic.sd_control.set_blkcnt(0);
+                uc.get_data_mut().sic.sd_control.set_di_en(false);
             }
-            None => {
-                warn!("Cannot receive data through unmapped SD port {sd_port}");
+
+            if has_data_out {
+                trace!("Process data out");
+                match uc.mem_read_as_vec(dest, size_final) {
+                    Err(err) => {
+                        error!("{NAME_DMAC}: Cannot read from 0x{dest:08x}: {err:?}");
+                        uc.get_data_mut().sic.dma_irq_status.set_target_abort(true);
+                        uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(false);
+                        if uc.get_data().sic.dma_irq_enable.get_target_abort() {
+                            post_interrupt(uc, InterruptNumber::SIC, true, false);
+                        }
+                    }
+                    Ok(buf) => {
+                        sd_device.send_data(&buf);
+
+                        uc.get_data_mut().sic.dma_count += size_final;
+                        uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(true);
+                        uc.get_data_mut().sic.sd_irq.set_block_xfer_done(true);
+                        uc.get_data_mut().sic.dma_dest_addr += u64::try_from(size_final).unwrap();
+                        if uc.get_data().sic.sd_irq_enable.get_block_xfer_done() {
+                            post_interrupt(uc, InterruptNumber::SIC, true, false);
+                        }
+                    }
+                }
+                uc.get_data_mut().sic.sd_control.set_do_en(false);
             }
+
+            uc.get_data_mut().sic.sd_control.set_blkcnt(0);
+        } else {
+            warn!("Cannot transfer data through unmapped SD port {sd_port}");
         }
-        uc.get_data_mut().sic.sd_control.set_di_en(false);
     }
 
-    if !skip_data && has_data_out {
-        todo!();
-    }
+    // if !skip_data && has_data_in {
+    //     let dest = uc.get_data().sic.dma_dest_addr;
+    //     let sd_device_op = match sd_port {
+    //         0 => Some(&mut device.internal_sd),
+    //         2 => Some(&mut device.external_sd),
+    //         _ => None
+    //     };
+
+    //     match sd_device_op {
+    //         Some(sd_device) => {
+    //             let size = usize::try_from(uc.get_data().sic.sd_io_size).unwrap();
+    //             let mult = usize::from(uc.get_data().sic.sd_control.get_blkcnt());
+    //             // TODO multiply by blkcnt if that value is set, and then the recv_data routine will need to try to fill the slice as much as
+    //             // possible until the limit on the SD card side has been reached.
+    //             let size_final = if mult == 0 {
+    //                 size
+    //             } else {
+    //                 size * mult
+    //             };
+    //             let mut buf = vec![0u8; size_final];
+    //             sd_device.recv_data(&mut buf);
+    //             match uc.mem_write(dest, &buf) {
+    //                 Err(err) => {
+    //                     error!("{NAME_DMAC}: Cannot write to 0x{dest:08x}: {err:?}");
+    //                     uc.get_data_mut().sic.dma_irq_status.set_target_abort(true);
+    //                     uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(false);
+    //                     if uc.get_data().sic.dma_irq_enable.get_target_abort() {
+    //                         post_interrupt(uc, InterruptNumber::SIC, true, false);
+    //                     }
+    //                 },
+    //                 Ok(_) => {
+    //                     let end = dest + u64::try_from(size_final).unwrap();
+    //                     uc.ctl_remove_cache(dest, end).unwrap_or_else(|err| {
+    //                         error!("Failed to remove TB: {err:?}");
+    //                     });
+    //                     uc.get_data_mut().sic.dma_count += size_final;
+    //                     uc.get_data_mut().sic.sd_irq.set_crc_ok_dat(true);
+    //                     uc.get_data_mut().sic.sd_irq.set_block_xfer_done(true);
+    //                     uc.get_data_mut().sic.dma_dest_addr += u64::try_from(size_final).unwrap();
+    //                     if uc.get_data().sic.sd_irq_enable.get_block_xfer_done() {
+    //                         post_interrupt(uc, InterruptNumber::SIC, true, false);
+    //                     }
+    //                 }
+    //             }
+    //             uc.get_data_mut().sic.sd_control.set_blkcnt(0);
+    //         }
+    //         None => {
+    //             warn!("Cannot receive data through unmapped SD port {sd_port}");
+    //         }
+    //     }
+    //     uc.get_data_mut().sic.sd_control.set_di_en(false);
+    // }
+
+    // if !skip_data && has_data_out {
+    //     let dest = uc.get_data().sic.dma_dest_addr;
+    //     let sd_device_op = match sd_port {
+    //         0 => Some(&mut device.internal_sd),
+    //         2 => Some(&mut device.external_sd),
+    //         _ => None
+    //     };
+
+    //     if let Some(sd_device) = sd_device_op {
+            
+    //     } else {
+    //         warn!("Cannot send data through unmapped SD port {sd_port}");
+    //     }
+    // }
 }
 
 /// Handle reset condition.

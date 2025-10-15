@@ -1,4 +1,4 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::{fmt::Display};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -594,6 +594,16 @@ impl SD {
                     self.term_illegal()
                 }
             }
+            25 => {
+                if self.card_status.get_current_state() == CurrentState::Transfer {
+                    self.send_action = SendAction::FTLWrite { sector_index: arg.into() };
+                    self.card_status.set_current_state(CurrentState::ReceivingData);
+                    let status = self.card_status.after_read();
+                    Response::R1(ResponseType1 { cmd, status, busy: false })
+                } else {
+                    self.term_illegal()
+                }
+            }
             55 => {
                 self.card_status.after_read();
                 self.card_status.set_app_command(true);
@@ -608,7 +618,28 @@ impl SD {
 
     /// Send data to the emulated SD card through the DAT channel.
     pub fn send_data(&mut self, data: &[u8]) {
-        todo!()
+        match self.send_action {
+            SendAction::None => {
+                warn!("Data provided by SIC but no send_action defined here. \
+                       This is likely a bug of either the emulator or the guest program.");
+            },
+            SendAction::FTLWrite { sector_index } => {
+                if data.len() % 512 != 0 {
+                    warn!("Buffer size is not multiple of sectors");
+                }
+                let image_file = self.image_file.as_mut().unwrap();
+                image_file.seek(SeekFrom::Start(512 * sector_index)).unwrap_or_else(|err| {
+                    error!("Seeking to sector {sector_index} failed: {err:?}");
+                    0u64
+                });
+                image_file.write_all(data).unwrap_or_else(|err| {
+                    error!("Writing {} bytes to sector {} failed: {:?}", data.len(), sector_index, err);
+                });
+                trace!("Wrote {} bytes to sector {}", data.len(), sector_index);
+                let new_sector_index = sector_index + u64::try_from(data.len()).unwrap() / 512;
+                self.send_action = SendAction::FTLWrite { sector_index: new_sector_index };
+            },
+        }
     }
 
     /// Receive data from the emulated SD card through the DAT channel.
