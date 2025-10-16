@@ -9,15 +9,15 @@ pub const BASE: u64 = 0xb8008000;
 pub const SIZE: usize = 0x1000;
 
 pub const REG_UART_DATA: u64 = 0x0;
-pub const REG_UART_IER: u64 = 0x4;
-pub const REG_UART_FCR: u64 = 0x8;
-pub const REG_UART_LCR: u64 = 0xc;
-pub const REG_UART_MCR: u64 = 0x10;
-pub const REG_UART_MSR: u64 = 0x14;
+// pub const REG_UART_IER: u64 = 0x4;
+// pub const REG_UART_FCR: u64 = 0x8;
+// pub const REG_UART_LCR: u64 = 0xc;
+// pub const REG_UART_MCR: u64 = 0x10;
+// pub const REG_UART_MSR: u64 = 0x14;
 pub const REG_UART_FSR: u64 = 0x18;
-pub const REG_UART_ISR: u64 = 0x1c;
-pub const REG_UART_TOR: u64 = 0x20;
-pub const REG_UART_BAUD: u64 = 0x24;
+// pub const REG_UART_ISR: u64 = 0x1c;
+// pub const REG_UART_TOR: u64 = 0x20;
+// pub const REG_UART_BAUD: u64 = 0x24;
 
 #[derive(Default)]
 pub struct UARTConfig {

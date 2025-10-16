@@ -1,19 +1,19 @@
 use log::{error, trace, warn};
 use unicorn_engine::RegisterARM;
-use crate::{device::{Device, StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
+use crate::{device::{StopReason, UnicornContext, request_stop}, exception, log_unsupported_read, log_unsupported_write};
 
 pub const BASE: u64 = 0xb8000000;
 pub const SIZE: usize = 0x1000;
 
 const REG_AIC_SCR_START: u64 = 0x0;
 const REG_AIC_SCR_END: u64 = 0x20;
-const REG_AIC_IRSR: u64 = 0x100;
-const REG_AIC_IASR: u64 = 0x104;
+//const REG_AIC_IRSR: u64 = 0x100;
+//const REG_AIC_IASR: u64 = 0x104;
 const REG_AIC_ISR: u64 = 0x108;
 const REG_AIC_IPER: u64 = 0x10c;
 const REG_AIC_ISNR: u64 = 0x110;
 const REG_AIC_IMR: u64 = 0x114;
-const REG_AIC_OISR: u64 = 0x118;
+//const REG_AIC_OISR: u64 = 0x118;
 const REG_AIC_MECR: u64 = 0x120;
 const REG_AIC_MDCR: u64 = 0x124;
 const REG_AIC_SSCR: u64 = 0x128;

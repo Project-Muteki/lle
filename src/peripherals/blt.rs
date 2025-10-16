@@ -264,10 +264,8 @@ pub fn tick(uc: &mut UnicornContext) {
 
     //let proj = proj.unwrap();
     if is_identity &&
-        blt.src_width == 320 &&
-        blt.src_height == 240 &&
-        blt.dest_width == 320 &&
-        blt.dest_height == 240
+        blt.src_width == blt.dest_width &&
+        blt.src_height == blt.dest_height
     {
         if matches!(blt.src_format, SourceFormat::ARGB8888) &&
             matches!(blt.dest_format, DestinationFormat::RGB565)
@@ -290,20 +288,27 @@ pub fn tick(uc: &mut UnicornContext) {
             matches!(blt.dest_format, DestinationFormat::RGB565)
         {
             // TODO fix behavior when dest is smaller than src (should clip the dest size out of src)
-            let srcbuf = uc.mem_read_as_vec(blt.src.into(), usize::from(blt.src_pitch) * usize::from(blt.src_height)).unwrap();
-            let mut destbuf = uc.mem_read_as_vec(blt.dest.into(), usize::from(blt.dest_pitch) * usize::from(blt.dest_height)).unwrap();
+            let copy_width = usize::from(blt.src_width.min(blt.dest_width));
+            let copy_height = usize::from(blt.src_height.min(blt.dest_height));
 
-            for (i, pixel) in srcbuf.chunks_exact(4).enumerate() {
-                let line = i / usize::from(blt.src_pitch) / 2;
-                let pxoffset = i % (usize::from(blt.src_pitch) / 2);
-                if line >= usize::from(blt.dest_height) {
-                    break;
-                }
-                if pxoffset * 2 >= usize::from(blt.dest_pitch) || pxoffset >= usize::from(blt.src_width) {
+            let srcbuf = uc.mem_read_as_vec(blt.src.into(), usize::from(blt.src_pitch) * copy_height).unwrap();
+            let mut destbuf = uc.mem_read_as_vec(blt.dest.into(), usize::from(blt.dest_pitch) * copy_height).unwrap();
+
+            for (i, pixel) in srcbuf.chunks_exact(2).enumerate() {
+                let line = (i * 2) / usize::from(blt.src_pitch);
+                let pxoffset = (i * 2) % usize::from(blt.src_pitch);
+
+                if pxoffset >= copy_width * 2 {
                     continue;
                 }
-                destbuf[line * usize::from(blt.dest_pitch) + pxoffset * 2] = pixel[0];
-                destbuf[line * usize::from(blt.dest_pitch) + pxoffset * 2 + 1] = pixel[1];
+
+                let copy_offset = line * usize::from(blt.dest_pitch) + pxoffset;
+                if copy_offset >= destbuf.len() || copy_offset + 1 >= destbuf.len() {
+                    continue;
+                }
+
+                destbuf[copy_offset] = pixel[0];
+                destbuf[copy_offset + 1] = pixel[1];
             }
 
             uc.mem_write(blt.dest.into(), &destbuf).unwrap();
