@@ -4,7 +4,7 @@ use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, bitfield};
 use log::{warn, debug};
 
 use crate::{log_unsupported_read, log_unsupported_write};
-use crate::device::{Device, QuitDetail, StopReason, UnicornContext, request_stop};
+use crate::device::{QuitDetail, StopReason, UnicornContext, request_stop};
 use crate::peripherals::common::{mmio_get_store_only, mmio_set_store_only};
 
 pub const BASE: u64 = 0xb0000000;
@@ -21,7 +21,7 @@ const REG_GPDFUN: u64 = 0x8c;
 const REG_GPEFUN: u64 = 0x90;
 
 const CLK_BASE: u64 = 0x200;
-const REG_PWRCON: u64 = CLK_BASE;
+//const REG_PWRCON: u64 = CLK_BASE;
 const REG_AHBCLK: u64 = CLK_BASE + 0x4;
 const REG_APBCLK: u64 = CLK_BASE + 0x8;
 const REG_CLKDIV0: u64 = CLK_BASE + 0xc;

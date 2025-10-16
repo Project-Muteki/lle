@@ -133,10 +133,10 @@ pub struct BLTConfig {
     pub translate_y: i32,
 }
 
-#[inline]
-fn fixed1616_to_f32(fixed: i32) -> f32 {
-    (f64::from(fixed) / 65536.0) as f32
-}
+// #[inline]
+// fn fixed1616_to_f32(fixed: i32) -> f32 {
+//     (f64::from(fixed) / 65536.0) as f32
+// }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
     if size != 4 {
@@ -240,9 +240,7 @@ pub fn tick(uc: &mut UnicornContext) {
         blt.element_a == 0x10000 &&
         blt.element_b == 0 &&
         blt.element_c == 0 &&
-        blt.element_d == 0x10000 &&
-        blt.translate_x == 0 &&
-        blt.translate_y == 0;
+        blt.element_d == 0x10000;
 
     // let proj = Projection::from_matrix([
     //     fixed1616_to_f32(blt.element_a), fixed1616_to_f32(blt.element_c), fixed1616_to_f32(blt.translate_x),
@@ -287,11 +285,11 @@ pub fn tick(uc: &mut UnicornContext) {
         if matches!(blt.src_format, SourceFormat::RGB565) &&
             matches!(blt.dest_format, DestinationFormat::RGB565)
         {
-            // TODO fix behavior when dest is smaller than src (should clip the dest size out of src)
             let copy_width = usize::from(blt.src_width.min(blt.dest_width));
             let copy_height = usize::from(blt.src_height.min(blt.dest_height));
+            let copy_offset = u64::from((blt.translate_x >> 16).cast_unsigned() * 2 + (blt.translate_y >> 16).cast_unsigned() * u32::from(blt.src_pitch));
 
-            let srcbuf = uc.mem_read_as_vec(blt.src.into(), usize::from(blt.src_pitch) * copy_height).unwrap();
+            let srcbuf = uc.mem_read_as_vec(u64::from(blt.src) + copy_offset, usize::from(blt.src_pitch) * copy_height).unwrap();
             let mut destbuf = uc.mem_read_as_vec(blt.dest.into(), usize::from(blt.dest_pitch) * copy_height).unwrap();
 
             for (i, pixel) in srcbuf.chunks_exact(2).enumerate() {

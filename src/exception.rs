@@ -77,7 +77,7 @@ pub fn intr(uc: &mut UnicornContext, intno: u32) {
     if intno == 2 {
         request_stop(uc, StopReason::SVC);
     } else {
-        error!("Not int2. This should not have happened.");
+        error!("Not int2 ({intno}). This should not have happened.");
         request_stop(uc, StopReason::Quit(QuitDetail::CPUException));
     }
 }

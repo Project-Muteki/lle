@@ -5,7 +5,7 @@ use log::{error, info, trace};
 use pixels::Pixels;
 use unicorn_engine::Unicorn;
 
-use crate::{exception::{ExceptionType, call_exception_handler}, extdev::sd::SD, peripherals::{adc, aic, blt, gpio, rtc, sic, sys, tmr, uart, vpost}};
+use crate::{exception::{ExceptionType, call_exception_handler}, extdev::{input::Input, sd::SD}, peripherals::{adc, aic, blt, gpio, rtc, sic, sys, tmr, uart, vpost}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -70,6 +70,7 @@ pub struct ExtraState {
 pub struct Device {
     pub internal_sd: SD,
     pub external_sd: SD,
+    pub input: Input,
 }
 
 pub type UnicornContext<'a> = Unicorn<'a, Box<ExtraState>>;
@@ -117,6 +118,8 @@ impl Device {
                 return false;
             },
             StopReason::FrameStep => {
+                adc::frame_step(uc, self);
+
                 if uc.get_data().vpost.control.get_run() {
                     trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
                     let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();

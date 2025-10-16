@@ -182,8 +182,6 @@ fn run_bootrom(uc: &mut UnicornContext, sd_image: &mut File) -> Result<(), Runti
     uc.get_data_mut().clk.upll.set_reg(0x0000447e);
     uc.get_data_mut().clk.update_tick_config();
 
-    // TODO: Move this to its own device with ticks and stuff (or at least it should be handled by ADC).
-    uc.get_data_mut().adc.xdata = 1023;
     // TODO: Set other initial states
 
     // RTC 24hr mode
@@ -210,7 +208,7 @@ fn emu_init<'a>() -> Result<UnicornContext<'a>, uc_error> {
     // Stop condition hook
     uc.add_code_hook(0, 0xffffffff, device::check_stop_condition)?;
 
-    uc.add_mem_hook(HookType::MEM_UNMAPPED, 0, 0xffffffff, exception::unmapped_access)?;
+    uc.add_mem_hook(HookType::MEM_INVALID, 0, 0xffffffff, exception::unmapped_access)?;
     uc.add_intr_hook(exception::intr)?;
 
     // MMIO registers
@@ -261,7 +259,7 @@ fn main() {
     let args = Args::parse();
 
     let event_loop = EventLoop::new().unwrap();
-    let input = WinitInputHelper::new();
+    let mut input = WinitInputHelper::new();
     let window = {
         let size = LogicalSize::new(320.0, 240.0);
         WindowBuilder::new()
@@ -305,6 +303,28 @@ fn main() {
         } else if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             elwt.exit();
             return;
+        }
+
+        if input.update(&event) {
+            if input.mouse_pressed(0) || input.mouse_held(0) {
+                if let Some(window_pos) = input.cursor() {
+                    if let Ok(converted_pos) = pixels.window_pos_to_pixel(window_pos) {
+                        device.input.touch_move(converted_pos);
+                    }
+                }
+            }
+
+            if input.mouse_released(0) {
+                device.input.touch_release();
+            }
+
+            if let Some(size) = input.window_resized() {
+                if let Err(err) = pixels.resize_surface(size.width, size.height) {
+                    error!("pixels.resize_surface: {:?}", err);
+                    elwt.exit();
+                    return;
+                }
+            }
         }
     }).unwrap();
 
