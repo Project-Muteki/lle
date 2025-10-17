@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{collections::HashMap, iter::zip, mem};
 
+use bitflags::bitflags;
 use log::{error, info, trace};
 use pixels::Pixels;
 use unicorn_engine::Unicorn;
@@ -27,17 +28,14 @@ impl fmt::Display for QuitDetail {
     }
 }
 
-#[derive(Default, Debug, PartialEq)]
-pub enum StopReason {
-    /// The default state. No reason to stop.
-    #[default]
-    Run,
-    /// Quitting the emulator. Note that this has higher priority than ticks and will cancel a tick if there is one.
-    Quit(QuitDetail),
-    /// Ticking devices.
-    Tick,
-    FrameStep,
-    SVC,
+bitflags! {
+    #[derive(Debug, Default, Copy, Clone)]
+    pub struct StopReason: u8 {
+        /// Ticking devices.
+        const Tick = 1 << 0;
+        const FrameStep = 1 << 1;
+        const SVC = 1 << 2;
+    }
 }
 
 /// Extra emulator states.
@@ -47,6 +45,7 @@ pub enum StopReason {
 pub struct ExtraState {
     pub raw_sdram: Vec<u8>,
     pub stop_reason: StopReason,
+    pub quit_detail: Option<QuitDetail>,
     pub steps: u64,
 
     pub store_only: HashMap<u64, u64>,
@@ -75,18 +74,15 @@ pub struct Device {
 
 pub type UnicornContext<'a> = Unicorn<'a, Box<ExtraState>>;
 
+#[inline]
 /// Defer a stop to right before the next instruction executes, stating the specified reason.
 pub fn request_stop(uc: &mut UnicornContext, reason: StopReason) {
-    let current_reason = &uc.get_data().stop_reason;
-    if matches!(reason, StopReason::Run) {
-        return;
-    }
-    if (
-        matches!(current_reason, StopReason::Run) ||
-        (!matches!(current_reason, StopReason::Quit(_)) && matches!(reason, StopReason::Quit(_)))
-    ) {
-        uc.get_data_mut().stop_reason = reason;
-    }
+    uc.get_data_mut().stop_reason |= reason;
+}
+
+#[inline]
+pub fn request_quit(uc: &mut UnicornContext, detail: QuitDetail) {
+    uc.get_data_mut().quit_detail = Some(detail);
 }
 
 /// Stops the emulator when a peripheral needs attention from the device emulator.
@@ -99,7 +95,7 @@ pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     vpost::generate_stop_condition(uc, steps);
     tmr::generate_stop_condition(uc, steps);
 
-    if !matches!(uc.get_data().stop_reason, StopReason::Run) {
+    if !uc.get_data().stop_reason.is_empty() {
         uc.emu_stop().unwrap_or_else(|err| {
             error!("Failed to stop emulator: {err:?}");
         });
@@ -111,50 +107,51 @@ impl Device {
     ///
     /// This will modify both the device states and the emulator states associated with it.
     pub fn tick(&mut self, uc: &mut UnicornContext, render: &mut Pixels) -> bool {
-        match &uc.get_data().stop_reason {
-            StopReason::Run => {}
-            StopReason::Quit(reason) => {
-                info!("Quit condition pre-check: {reason}");
-                return false;
-            },
-            StopReason::FrameStep => {
-                adc::frame_step(uc, self);
+        let quit_detail = mem::take(&mut uc.get_data_mut().quit_detail);
+        if let Some(reason) = quit_detail {
+            info!("Quit condition pre-check: {reason}");
+            return false;
+        }
 
-                if uc.get_data().vpost.control.get_run() {
-                    trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
-                    let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();
-                    for (spx, dpx) in zip(a.chunks_exact(2), render.frame_mut().chunks_exact_mut(4)) {
-                        dpx[0] = spx[1] & 0b11111000;
-                        dpx[1] = ((spx[1] & 0b111) << 5) | ((spx[0] & 0b11100000) >> 3);
-                        dpx[2] = spx[0] << 3;
-                        dpx[3] = 0xff;
-                    }
-                }
-                match render.render() {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!("Failed to render image: {err:?}");
-                        uc.get_data_mut().stop_reason = StopReason::Quit(QuitDetail::HLECallbackFailure);
-                    },
+        let reason = mem::take(&mut uc.get_data_mut().stop_reason);
+
+        if reason.contains(StopReason::FrameStep) {
+            adc::frame_step(uc, self);
+            if uc.get_data().vpost.control.get_run() {
+                trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
+                let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();
+                for (spx, dpx) in zip(a.chunks_exact(2), render.frame_mut().chunks_exact_mut(4)) {
+                    dpx[0] = spx[1] & 0b11111000;
+                    dpx[1] = ((spx[1] & 0b111) << 5) | ((spx[0] & 0b11100000) >> 3);
+                    dpx[2] = spx[0] << 3;
+                    dpx[3] = 0xff;
                 }
             }
-            StopReason::SVC => {
-                call_exception_handler(uc, ExceptionType::SupervisorCall).unwrap_or_else(|err| {
-                    error!("Failed to invoke exception handler: {err:?}.");
-                });
-            }
-            StopReason::Tick => {
-                aic::tick(uc);
-                sys::tick(uc);
-                rtc::tick(uc);
-                sic::tick(uc, self);
-                blt::tick(uc);
+            match render.render() {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("Failed to render image: {err:?}");
+                    request_quit(uc, QuitDetail::HLECallbackFailure);
+                },
             }
         }
 
+        if reason.contains(StopReason::SVC) {
+            call_exception_handler(uc, ExceptionType::SupervisorCall).unwrap_or_else(|err| {
+                error!("Failed to invoke exception handler: {err:?}.");
+            });
+        }
 
-        let prev_reason = mem::take(&mut uc.get_data_mut().stop_reason);
-        if let StopReason::Quit(reason) = prev_reason {
+        if reason.contains(StopReason::Tick) {
+            aic::tick(uc);
+            sys::tick(uc);
+            rtc::tick(uc);
+            sic::tick(uc, self);
+            blt::tick(uc);
+        }
+
+        let quit_detail = mem::take(&mut uc.get_data_mut().quit_detail);
+        if let Some(reason) = quit_detail {
             info!("Quit condition post-check: {reason}");
             false
         } else {

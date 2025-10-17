@@ -1,4 +1,4 @@
-use log::{trace, warn};
+use log::warn;
 use bit_field::{B2, B4, bitfield};
 
 use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};

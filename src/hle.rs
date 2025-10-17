@@ -5,7 +5,7 @@ use log::{error, info, warn};
 use regex::Regex;
 use unicorn_engine::{RegisterARM, uc_error};
 
-use crate::{RuntimeError, device::{QuitDetail, UnicornContext, request_stop}};
+use crate::{RuntimeError, device::{QuitDetail, UnicornContext, request_quit}};
 
 const NAME_PRINTF: &str = "lle::hle::printf";
 
@@ -372,6 +372,6 @@ pub fn printf_callback(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     printf(uc).unwrap_or_else(|err| {
         let lr = uc.reg_read(RegisterARM::LR).unwrap();
         error!("Failed to execute printf at 0x{lr:08x}: {err:?}");
-        request_stop(uc, crate::device::StopReason::Quit(QuitDetail::HLECallbackFailure));
+        request_quit(uc, QuitDetail::HLECallbackFailure);
     })
 }

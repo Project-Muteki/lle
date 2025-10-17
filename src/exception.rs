@@ -3,7 +3,7 @@ use std::{fs::File, io::Write};
 use log::{error, trace};
 use unicorn_engine::{MemType, RegisterARM, uc_error};
 
-use crate::{RuntimeError, device::{QuitDetail, StopReason, UnicornContext, request_stop}};
+use crate::{RuntimeError, device::{QuitDetail, StopReason, UnicornContext, request_quit, request_stop}};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -78,7 +78,7 @@ pub fn intr(uc: &mut UnicornContext, intno: u32) {
         request_stop(uc, StopReason::SVC);
     } else {
         error!("Not int2 ({intno}). This should not have happened.");
-        request_stop(uc, StopReason::Quit(QuitDetail::CPUException));
+        request_quit(uc, QuitDetail::CPUException);
     }
 }
 
