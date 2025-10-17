@@ -261,7 +261,7 @@ fn main() {
     let event_loop = EventLoop::new().unwrap();
     let mut input = WinitInputHelper::new();
     let window = {
-        let size = LogicalSize::new(320.0, 240.0);
+        let size = LogicalSize::new(640.0, 480.0);
         WindowBuilder::new()
             .with_title("lle")
             .with_inner_size(size)
