@@ -10,6 +10,11 @@ const ADC_TSC: u64 = 0x4;
 const ADC_XDATA: u64 = 0xc;
 const ADC_YDATA: u64 = 0x10;
 
+const X_MIN: f64 = 82.0;
+const X_MAX: f64 = 238559.0 / 260.0;
+const Y_MIN: f64 = 95.0;
+const Y_MAX: f64 = 172211.0 / 180.0;
+
 #[bitfield]
 #[derive(Debug, PartialEq)]
 pub enum ADCMux {
@@ -96,6 +101,8 @@ pub struct ADCConfig {
 
     pub touch_x: u16,
     pub touch_y: u16,
+
+    pub irq_on_frame_step: bool,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -164,7 +171,23 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 }
 
-pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
+pub fn frame_step(uc: &mut UnicornContext) {
+    if !(uc.get_data().clk.apbclk.get_adc() && uc.get_data().adc.control.get_enable()) {
+        return;
+    }
+
+    let adc = &uc.get_data().adc;
+    if adc.control.get_touch_mode() == TouchMode::WaitForTrigger &&
+        adc.control.get_wait_for_trigger_enable() && 
+        adc.control.get_wait_for_trigger_status() &&
+        adc.irq_on_frame_step
+    {
+        uc.get_data_mut().adc.irq_on_frame_step = false;
+        post_interrupt(uc, InterruptNumber::ADC, true, false);
+    }
+}
+
+pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
     if !(uc.get_data().clk.apbclk.get_adc() && uc.get_data().adc.control.get_enable()) {
         return;
     }
@@ -177,8 +200,8 @@ pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
         trace!("Touch triggered");
         let adc = &mut uc.get_data_mut().adc;
         if let Some(pos) = update {
-            adc.touch_x = (24.0 + ((pos.0 as f64 / 319.0) * 967.0)).round() as u16;
-            adc.touch_y = (24.0 + (((239 - pos.1) as f64 / 239.0) * 967.0)).round() as u16;
+            adc.touch_x = (X_MIN + ((pos.0 as f64 / 319.0) * (X_MAX - X_MIN))).round() as u16;
+            adc.touch_y = (Y_MIN + (((239 - pos.1) as f64 / 239.0) * (Y_MAX - Y_MIN))).round() as u16;
             adc.control.set_wait_for_trigger_status(true);
             adc.touch_control.set_pressing(true);
             trace!("New x={} y={}", adc.touch_x, adc.touch_y);
@@ -187,9 +210,6 @@ pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
             adc.touch_control.set_pressing(false);
             trace!("Release");
         }
-
-        if uc.get_data().adc.control.get_wait_for_trigger_enable() {
-            post_interrupt(uc, InterruptNumber::ADC, true, false);
-        }
+        adc.irq_on_frame_step = true;
     }
 }

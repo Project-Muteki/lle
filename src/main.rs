@@ -43,10 +43,12 @@ use device::Device;
 use peripherals::{sic, sys, gpio};
 use winit::event::Event;
 use winit::event::WindowEvent;
+use winit::keyboard::KeyCode;
 
 use crate::device::ExtraState;
 use crate::device::UnicornContext;
 use crate::exception::dump_data;
+use crate::extdev::input::KeyType;
 use crate::peripherals::adc;
 use crate::peripherals::aic;
 use crate::peripherals::blt;
@@ -282,6 +284,9 @@ fn main() {
     let mut esd_img = File::open(&args.esd).unwrap();
     run_bootrom(uc, &mut esd_img).unwrap();
     device.internal_sd.mount(&args.esd).unwrap();
+    if let Some(xsd_path) = &args.xsd {
+        device.external_sd.mount(xsd_path).unwrap();
+    }
 
     // TODO move this out of main
     event_loop.run(|event, elwt| {
@@ -316,6 +321,14 @@ fn main() {
 
             if input.mouse_released(0) {
                 device.input.touch_release();
+            }
+
+            if input.key_pressed(KeyCode::Home) {
+                device.input.key_press(KeyType::Home);
+            }
+
+            if input.key_released(KeyCode::Home) {
+                device.input.key_release(KeyType::Home);
             }
 
             if let Some(size) = input.window_resized() {

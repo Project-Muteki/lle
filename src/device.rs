@@ -116,7 +116,7 @@ impl Device {
         let reason = mem::take(&mut uc.get_data_mut().stop_reason);
 
         if reason.contains(StopReason::FrameStep) {
-            adc::frame_step(uc, self);
+            adc::frame_step(uc);
             if uc.get_data().vpost.control.get_run() {
                 trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
                 let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();
@@ -148,6 +148,7 @@ impl Device {
             rtc::tick(uc);
             sic::tick(uc, self);
             blt::tick(uc);
+            adc::tick(uc, self);
         }
 
         let quit_detail = mem::take(&mut uc.get_data_mut().quit_detail);

@@ -1,7 +1,7 @@
 use log::warn;
 use bit_field::{B2, B4, bitfield};
 
-use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write};
+use crate::{device::{Device, UnicornContext}, extdev::input::{KeyPress, KeyType}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 
 pub const BASE: u64 = 0xb8001000;
 pub const SIZE: usize = 0x1000;
@@ -207,5 +207,33 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
         _ => {
             log_unsupported_write!(addr, size, value);
         }
+    }
+}
+
+pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
+    if let Some(a) = device.input.check_key() {
+        let gpio = &mut uc.get_data_mut().gpio;
+        match a {
+            KeyPress::Press(key_type) => {
+                match key_type {
+                    KeyType::Home => {
+                        gpio.ports[0].data_in.set_p2(false);
+                        gpio.ports[0].irq_latch.set_p2(true);
+                    }
+                    _ => {},
+                }
+            },
+            KeyPress::Release(key_type) => {
+                match key_type {
+                    KeyType::Home => {
+                        gpio.ports[0].data_in.set_p2(true);
+                        gpio.ports[0].irq_latch.set_p2(true);
+                    }
+                    _ => {},
+                }
+                
+            },
+        }
+        // TODO raise interrupt
     }
 }
