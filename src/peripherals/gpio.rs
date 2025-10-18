@@ -1,4 +1,4 @@
-use log::warn;
+use log::{debug, warn};
 use bit_field::{B2, B4, bitfield};
 
 use crate::{device::{Device, UnicornContext}, extdev::input::{KeyPress, KeyType}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
@@ -100,6 +100,8 @@ pub struct GPIOConfig {
     pub ports: [GPIOChannel; 5],
     pub debounce: GPIODebounce,
     pub irq_latch_source: GPIOIRQLatchSource,
+
+    pub irq_on_frame_step: bool,
 }
 
 pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
@@ -210,15 +212,59 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
     }
 }
 
-pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
-    if let Some(a) = device.input.check_key() {
+pub fn frame_step(uc: &mut UnicornContext) {
+    if !uc.get_data().gpio.irq_on_frame_step {
+        return;
+    }
+
+    uc.get_data_mut().gpio.irq_on_frame_step = false;
+
+    let mut channels = [false; 4];
+
+    // Collect channels that will raise interrupt
+    for port in &uc.get_data().gpio.ports {
+        let irq_enable = port.irq_enable.get(0, 16);
+        let trigger_status = port.irq_trigger_source.get(0, 16);
+        if irq_enable == 0 || trigger_status == 0 {
+            continue;
+        }
+
+        for pin in 0..16 {
+            let bitmask = 1u64 << pin;
+            if irq_enable & bitmask != 0 && trigger_status & bitmask != 0 {
+                let irq_src = port.irq_src.get(pin * 2, 2);
+                channels[usize::try_from(irq_src).unwrap()] = true;
+            }
+        }
+    }
+
+    for (i, enable) in channels.iter().enumerate() {
+        if !*enable {
+            continue;
+        }
+
+        let intno = match i {
+            0 => InterruptNumber::EXTINT0,
+            1 => InterruptNumber::EXTINT1,
+            2 => InterruptNumber::EXTINT2,
+            3 => InterruptNumber::EXTINT3,
+            _ => panic!("wtf"),
+        };
+
+        post_interrupt(uc, intno, true, false);
+    }
+}
+
+pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
+    if let Some(key_press) = device.input.check_key() {
         let gpio = &mut uc.get_data_mut().gpio;
-        match a {
+        match key_press {
             KeyPress::Press(key_type) => {
                 match key_type {
                     KeyType::Home => {
+                        debug!("Home pressed");
                         gpio.ports[0].data_in.set_p2(false);
-                        gpio.ports[0].irq_latch.set_p2(true);
+                        gpio.ports[0].irq_trigger_source.set_p2(true);
                     }
                     _ => {},
                 }
@@ -226,14 +272,14 @@ pub fn frame_step(uc: &mut UnicornContext, device: &mut Device) {
             KeyPress::Release(key_type) => {
                 match key_type {
                     KeyType::Home => {
+                        debug!("Home released");
                         gpio.ports[0].data_in.set_p2(true);
-                        gpio.ports[0].irq_latch.set_p2(true);
+                        gpio.ports[0].irq_trigger_source.set_p2(true);
                     }
                     _ => {},
                 }
-                
             },
         }
-        // TODO raise interrupt
+        gpio.irq_on_frame_step = true;
     }
 }
