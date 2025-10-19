@@ -1,7 +1,7 @@
-use log::{debug, warn};
+use log::warn;
 use bit_field::{B2, B4, bitfield};
 
-use crate::{device::{Device, UnicornContext}, extdev::input::{KeyPress, KeyType}, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
+use crate::{device::UnicornContext, log_unsupported_read, log_unsupported_write, peripherals::aic::{InterruptNumber, post_interrupt}};
 
 pub const BASE: u64 = 0xb8001000;
 pub const SIZE: usize = 0x1000;
@@ -252,34 +252,5 @@ pub fn frame_step(uc: &mut UnicornContext) {
         };
 
         post_interrupt(uc, intno, true, false);
-    }
-}
-
-pub fn tick(uc: &mut UnicornContext, device: &mut Device) {
-    if let Some(key_press) = device.input.check_key() {
-        let gpio = &mut uc.get_data_mut().gpio;
-        match key_press {
-            KeyPress::Press(key_type) => {
-                match key_type {
-                    KeyType::Home => {
-                        debug!("Home pressed");
-                        gpio.ports[0].data_in.set_p2(false);
-                        gpio.ports[0].irq_trigger_source.set_p2(true);
-                    }
-                    _ => {},
-                }
-            },
-            KeyPress::Release(key_type) => {
-                match key_type {
-                    KeyType::Home => {
-                        debug!("Home released");
-                        gpio.ports[0].data_in.set_p2(true);
-                        gpio.ports[0].irq_trigger_source.set_p2(true);
-                    }
-                    _ => {},
-                }
-            },
-        }
-        gpio.irq_on_frame_step = true;
     }
 }

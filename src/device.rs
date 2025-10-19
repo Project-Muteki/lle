@@ -2,11 +2,11 @@ use core::fmt;
 use std::{collections::HashMap, iter::zip, mem};
 
 use bitflags::bitflags;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use pixels::Pixels;
 use unicorn_engine::Unicorn;
 
-use crate::{exception::{ExceptionType, call_exception_handler}, extdev::{input::Input, sd::SD}, peripherals::{adc, aic, blt, gpio, rtc, sic, sys, tmr, uart, vpost}};
+use crate::{exception::{ExceptionType, call_exception_handler}, extdev::{input::{Input, KeyPress, KeyType}, sd::SD}, peripherals::{adc, aic, blt, gpio, rtc, sic, sys, tmr, uart, vpost}};
 
 #[derive(Default, Debug, PartialEq)]
 pub enum QuitDetail {
@@ -102,6 +102,47 @@ pub fn check_stop_condition(uc: &mut UnicornContext, _addr: u64, _size: u32) {
     }
 }
 
+pub fn input_tick(uc: &mut UnicornContext, device: &mut Device) {
+    if let Some(key_press) = device.input.check_key() {
+        match key_press {
+            KeyPress::Press(key_type) => {
+                match key_type {
+                    KeyType::Home => {
+                        debug!("Home pressed");
+                        let gpio = &mut uc.get_data_mut().gpio;
+                        gpio.ports[0].data_in.set_p2(false);
+                        gpio.ports[0].irq_trigger_source.set_p2(true);
+                        gpio.irq_on_frame_step = true;
+                    }
+                    KeyType::Power => {
+                        debug!("Power pressed");
+                        let rtc = &mut uc.get_data_mut().rtc;
+                        rtc.power_control.set_power_key(false);
+                        rtc.irq_on_frame_step = true;
+                    }
+                }
+            },
+            KeyPress::Release(key_type) => {
+                match key_type {
+                    KeyType::Home => {
+                        debug!("Home released");
+                        let gpio = &mut uc.get_data_mut().gpio;
+                        gpio.ports[0].data_in.set_p2(true);
+                        gpio.ports[0].irq_trigger_source.set_p2(true);
+                        gpio.irq_on_frame_step = true;
+                    }
+                    KeyType::Power => {
+                        debug!("Power released");
+                        let rtc = &mut uc.get_data_mut().rtc;
+                        rtc.power_control.set_power_key(true);
+                        rtc.irq_on_frame_step = true;
+                    }
+                }
+            },
+        }
+    }
+}
+
 impl Device {
     /// Process MMIO register updates and device state changes.
     ///
@@ -118,6 +159,7 @@ impl Device {
         if reason.contains(StopReason::FrameStep) {
             adc::frame_step(uc);
             gpio::frame_step(uc);
+            rtc::frame_step(uc);
             if uc.get_data().vpost.control.get_run() {
                 trace!("Frame copy from 0x{:08x}", uc.get_data().vpost.fb);
                 let a = uc.mem_read_as_vec(uc.get_data().vpost.fb.into(), 320 * 240 * 2).unwrap();
@@ -150,7 +192,7 @@ impl Device {
             sic::tick(uc, self);
             blt::tick(uc);
             adc::tick(uc, self);
-            gpio::tick(uc, self);
+            input_tick(uc, self);
         }
 
         let quit_detail = mem::take(&mut uc.get_data_mut().quit_detail);

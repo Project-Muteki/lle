@@ -331,6 +331,14 @@ fn main() {
                 device.input.key_release(KeyType::Home);
             }
 
+            if input.key_pressed(KeyCode::Escape) {
+                device.input.key_press(KeyType::Power);
+            }
+
+            if input.key_released(KeyCode::Escape) {
+                device.input.key_release(KeyType::Power);
+            }
+
             if let Some(size) = input.window_resized() {
                 if let Err(err) = pixels.resize_surface(size.width, size.height) {
                     error!("pixels.resize_surface: {:?}", err);

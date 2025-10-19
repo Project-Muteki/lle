@@ -4,7 +4,7 @@ use bit_field::{B4, B8, B12, bitfield};
 use log::{debug, error, trace, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
-use crate::{device::{QuitDetail, StopReason, UnicornContext, request_quit, request_stop}, log_unsupported_read, log_unsupported_write, peripherals::common::{mmio_get_store_only, mmio_set_store_only}};
+use crate::{device::{QuitDetail, StopReason, UnicornContext, request_quit, request_stop}, log_unsupported_read, log_unsupported_write, peripherals::{aic::{InterruptNumber, post_interrupt}, common::{mmio_get_store_only, mmio_set_store_only}}};
 
 pub const BASE: u64 = 0xb8003000;
 pub const SIZE: usize = 0x1000;
@@ -27,6 +27,8 @@ pub struct RTCConfig {
     pub write_enabled: bool,
     pub power_control: PowerControl,
     pub timekeeper: TimeKeeper,
+
+    pub irq_on_frame_step: bool,
 }
 
 #[bitfield]
@@ -36,7 +38,7 @@ pub struct PowerControl {
     power_off_delay_enable: bool,
     reserved_3: B4,
     power_key: bool,
-    status: B8,
+    user_defined: B8,
     power_off_delay_sec: B4,
     reserved_20: B12,
 }
@@ -45,6 +47,7 @@ impl Default for PowerControl {
     fn default() -> Self {
         let mut result = Self::new();
         result.set_power_on(true);
+        result.set_power_key(true);
         result
     }
 }
@@ -199,5 +202,13 @@ pub fn tick(uc: &mut UnicornContext) {
     let power_control = &uc.get_data().rtc.power_control;
     if power_control.get_power_off() || !power_control.get_power_on() {
         request_quit(uc, QuitDetail::CPUHalt);
+    }
+}
+
+pub fn frame_step(uc: &mut UnicornContext) {
+    if uc.get_data().rtc.irq_on_frame_step {
+        uc.get_data_mut().rtc.irq_on_frame_step = false;
+        post_interrupt(uc, InterruptNumber::RTC, true, false);
+        return;
     }
 }
