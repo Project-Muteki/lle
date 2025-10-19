@@ -16,6 +16,7 @@ const REG_TLR: u64 = 0xc;
 const REG_CLR: u64 = 0x10;
 const REG_TSSR: u64 = 0x14;
 const REG_DWR: u64 = 0x18;
+const REG_RIER: u64 = 0x28;
 const REG_RIIR: u64 = 0x2c;
 const REG_PWRON: u64 = 0x34;
 
@@ -28,14 +29,15 @@ pub struct RTCConfig {
     pub write_enabled: bool,
     pub power_control: PowerControl,
     pub timekeeper: TimeKeeper,
-    pub irq: RTCIRQStatus,
+    pub irq_enable: RTCIRQFlag,
+    pub irq_status: RTCIRQFlag,
 
     pub irq_on_frame_step: bool,
 }
 
 #[bitfield]
 #[derive(Default)]
-pub struct RTCIRQStatus {
+pub struct RTCIRQFlag {
     alarm: bool,
     tick: bool,
     power_key: bool,
@@ -158,7 +160,8 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         REG_CLR => uc.get_data().rtc.timekeeper.get_date_reg().into(),
         REG_TSSR => uc.get_data().rtc.timekeeper.get_time_scale_reg().into(),
         REG_DWR => uc.get_data().rtc.timekeeper.get_day_of_week_reg().into(),
-        REG_RIIR => uc.get_data().rtc.irq.get(0, 8),
+        REG_RIER => uc.get_data().rtc.irq_enable.get(0, 8),
+        REG_RIIR => uc.get_data().rtc.irq_status.get(0, 8),
         REG_PWRON => uc.get_data().rtc.power_control.get(0, 32),
         _ => {
             log_unsupported_read!(addr, size);
@@ -193,9 +196,13 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             debug!("Freq compensation: 0x{value:08x}");
             mmio_set_store_only(uc, BASE + addr, value);
         }
+        REG_RIER => {
+            uc.get_data_mut().rtc.irq_enable.set(0, 8, value);
+            trace!("Set REG_RIER {:?}", uc.get_data().rtc.irq_enable);
+        }
         REG_RIIR => {
-            let old_value = uc.get_data().rtc.irq.get(0, 8);
-            uc.get_data_mut().rtc.irq.set(0, 8, old_value & !value);
+            let old_value = uc.get_data().rtc.irq_status.get(0, 8);
+            uc.get_data_mut().rtc.irq_status.set(0, 8, old_value & !value);
         }
         REG_PWRON => {
             let power_control = &mut uc.get_data_mut().rtc.power_control;
@@ -225,8 +232,10 @@ pub fn frame_step(uc: &mut UnicornContext) {
     if uc.get_data().rtc.irq_on_frame_step {
         let rtc = &mut uc.get_data_mut().rtc;
         rtc.irq_on_frame_step = false;
-        rtc.irq.set_power_key(true);
-        post_interrupt(uc, InterruptNumber::RTC, true, false);
+        if rtc.irq_enable.get_power_key() {
+            rtc.irq_status.set_power_key(true);
+            post_interrupt(uc, InterruptNumber::RTC, true, false);
+        }
         return;
     }
 }
