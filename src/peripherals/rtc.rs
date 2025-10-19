@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use bit_field::{B4, B8, B12, bitfield};
+use bit_field::{B4, B5, B8, B12, bitfield};
 use log::{debug, error, trace, warn};
 use chrono::{DateTime, Datelike, Local, Timelike};
 
@@ -16,6 +16,7 @@ const REG_TLR: u64 = 0xc;
 const REG_CLR: u64 = 0x10;
 const REG_TSSR: u64 = 0x14;
 const REG_DWR: u64 = 0x18;
+const REG_RIIR: u64 = 0x2c;
 const REG_PWRON: u64 = 0x34;
 
 const MAGIC_INIT: u32 = 0xa5eb1357;
@@ -27,8 +28,18 @@ pub struct RTCConfig {
     pub write_enabled: bool,
     pub power_control: PowerControl,
     pub timekeeper: TimeKeeper,
+    pub irq: RTCIRQStatus,
 
     pub irq_on_frame_step: bool,
+}
+
+#[bitfield]
+#[derive(Default)]
+pub struct RTCIRQStatus {
+    alarm: bool,
+    tick: bool,
+    power_key: bool,
+    reserved_3: B5,
 }
 
 #[bitfield]
@@ -147,6 +158,7 @@ pub fn read(uc: &mut UnicornContext, addr: u64, size: usize) -> u64 {
         REG_CLR => uc.get_data().rtc.timekeeper.get_date_reg().into(),
         REG_TSSR => uc.get_data().rtc.timekeeper.get_time_scale_reg().into(),
         REG_DWR => uc.get_data().rtc.timekeeper.get_day_of_week_reg().into(),
+        REG_RIIR => uc.get_data().rtc.irq.get(0, 8),
         REG_PWRON => uc.get_data().rtc.power_control.get(0, 32),
         _ => {
             log_unsupported_read!(addr, size);
@@ -181,6 +193,10 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             debug!("Freq compensation: 0x{value:08x}");
             mmio_set_store_only(uc, BASE + addr, value);
         }
+        REG_RIIR => {
+            let old_value = uc.get_data().rtc.irq.get(0, 8);
+            uc.get_data_mut().rtc.irq.set(0, 8, old_value & !value);
+        }
         REG_PWRON => {
             let power_control = &mut uc.get_data_mut().rtc.power_control;
             power_control.set(0, 32, value);
@@ -207,7 +223,9 @@ pub fn tick(uc: &mut UnicornContext) {
 
 pub fn frame_step(uc: &mut UnicornContext) {
     if uc.get_data().rtc.irq_on_frame_step {
-        uc.get_data_mut().rtc.irq_on_frame_step = false;
+        let rtc = &mut uc.get_data_mut().rtc;
+        rtc.irq_on_frame_step = false;
+        rtc.irq.set_power_key(true);
         post_interrupt(uc, InterruptNumber::RTC, true, false);
         return;
     }
