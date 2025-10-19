@@ -1,7 +1,10 @@
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::{fmt::Display};
 use std::fs;
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::MetadataExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
 
 use bit_field::{B1, B2, B3, B4, B5, B6, B7, B8, B12, B22, bitfield};
 use log::{debug, error, trace, warn};
@@ -371,7 +374,11 @@ impl SD {
         }
         let file = fs::OpenOptions::new().read(true).write(true).open(path)?;
         self.image_file = Some(file);
+
+        #[cfg(target_os = "linux")]
         let size = self.image_file.as_ref().unwrap().metadata()?.size();
+        #[cfg(target_os = "windows")]
+        let size = self.image_file.as_ref().unwrap().metadata()?.file_size();
 
         let csd_inner = CardSpecific::init_with_size(size);
         debug!("Emulated CSD: {}", &csd_inner);

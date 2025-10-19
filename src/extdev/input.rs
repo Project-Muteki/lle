@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use winit::event::KeyEvent;
-
 pub enum KeyType {
     Home,
     Power,
