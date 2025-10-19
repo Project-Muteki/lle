@@ -33,8 +33,8 @@ CMD55
     ACMD51
 */
 
-const CID_ESD: [u8; 16] = [0x00, 0x45, 0x6d, 0x49, 0x6e, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x6f];
-const CID_XSD: [u8; 16] = [0x00, 0x45, 0x6d, 0x45, 0x78, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x65];
+pub const CID_ESD: [u8; 16] = [0x00, 0x45, 0x6d, 0x49, 0x6e, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x6f];
+pub const CID_XSD: [u8; 16] = [0x00, 0x45, 0x6d, 0x45, 0x78, 0x74, 0x53, 0x44, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x00, 0xe1, 0x65];
 // SD spec V2.00, erases to 0, no security, 1-and-4-bit interface, no optional command support.
 const SCR: [u8; 8] = [0x02, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 // From 6 to 1
@@ -357,6 +357,7 @@ impl CardSpecific {
 
 #[derive(Default)]
 pub struct SD {
+    cid: [u8; 16],
     csd: Option<CardSpecific>,
     card_status: CardStatus,
     rca: u16,
@@ -466,7 +467,7 @@ impl SD {
             2 => {
                 if self.card_status.get_current_state() == CurrentState::Ready {
                     self.card_status.set_current_state(CurrentState::Identification);
-                    Response::R2(ResponseType2 { cid_csd: CID_ESD.clone() })
+                    Response::R2(ResponseType2 { cid_csd: self.cid.clone() })
                 } else {
                     self.term_illegal()
                 }
@@ -746,5 +747,9 @@ impl SD {
     fn term_illegal(&mut self) -> Response {
         self.card_status.set_illegal_command(true);
         Response::RNone
+    }
+
+    pub fn set_cid(&mut self, cid: &[u8]) {
+        self.cid.clone_from_slice(cid);
     }
 }

@@ -49,6 +49,7 @@ use crate::device::ExtraState;
 use crate::device::UnicornContext;
 use crate::exception::dump_data;
 use crate::extdev::input::KeyType;
+use crate::extdev::sd::{CID_ESD, CID_XSD};
 use crate::peripherals::adc;
 use crate::peripherals::aic;
 use crate::peripherals::blt;
@@ -284,8 +285,10 @@ fn main() {
     let mut esd_img = File::open(&args.esd).unwrap();
     run_bootrom(uc, &mut esd_img).unwrap();
     device.internal_sd.mount(&args.esd).unwrap();
+    device.internal_sd.set_cid(&CID_ESD);
     if let Some(xsd_path) = &args.xsd {
         device.external_sd.mount(xsd_path).unwrap();
+        device.external_sd.set_cid(&CID_XSD);
     }
 
     // TODO move this out of main
