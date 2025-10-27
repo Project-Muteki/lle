@@ -157,6 +157,14 @@ pub fn write(uc: &mut UnicornContext, addr: u64, size: usize, value: u64) {
             if uc.get_data().tmr.channels[1].control.get_reset() {
                 uc.get_data_mut().tmr.channels[1].reset();
             }
+            if uc.get_data().tmr.channels[1].control.get_enable() {
+                let pc = uc.pc_read().unwrap();
+                trace!("TMR1 enable @ 0x{pc:08x}");
+            }
+            if uc.get_data().tmr.channels[1].control.get_irq_enable() {
+                let pc = uc.pc_read().unwrap();
+                trace!("TMR1 IRQ enable @ 0x{pc:08x}");
+            }
             trace!("REG_TCSR1 {:?}", uc.get_data().tmr.channels[1].control);
         }
         REG_TICR0 => {
